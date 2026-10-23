@@ -37,7 +37,7 @@ Full automation depends on Windows display APIs. Linux and macOS are not support
 Open **PowerShell** and clone the repository:
 
 ```powershell
-git clone https://github.com/thsqaz123-dot/happybin_auto_public.git
+git clone https://github.com/sontheo/happybin_auto_public.git
 cd happybin_auto_public
 ```
 
