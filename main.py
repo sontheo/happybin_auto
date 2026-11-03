@@ -1,6 +1,12 @@
 """해피빈 자동화 진입점. 기본 실행은 Windows UI다."""
 import argparse
 import getpass
+import sys
+
+# Windows의 비한국어 콘솔에서도 한글 메시지 출력이 실패하지 않도록 한다.
+for stream in (sys.stdout, sys.stderr):
+    if stream is not None and hasattr(stream, "reconfigure"):
+        stream.reconfigure(errors="replace")
 
 from automation import run_automation
 from modules.session_manager import clear_session, get_session_info
