@@ -17,19 +17,10 @@
 
 You need **Windows x64 and an interactive desktop**. The release ZIP includes the application and Playwright's Chromium; a separate Python or Git installation is not required.
 
-1. Download `HappybinAuto-windows-x64.zip` and `SHA256SUMS.txt` from the [latest release](https://github.com/sontheo/happybin_auto/releases/latest).
+1. Download `HappybinAuto-windows-x64.zip` from the [latest release](https://github.com/sontheo/happybin_auto/releases/latest).
 2. Extract the ZIP and run `HappybinAuto.exe` inside the `HappybinAuto` folder. Keep the included `_internal` folder beside the executable.
 3. Select **자동 수집 시작** (start collection). When the browser opens, follow its prompts to sign in to NAVER. Do not manually operate its tabs while automation is running.
 4. Review the progress and logs. The stop button requests that the current run stop.
-
-To check that the downloaded ZIP matches the published file, run the following in PowerShell from the folder containing both downloads and compare the hash values:
-
-```powershell
-Get-FileHash .\HappybinAuto-windows-x64.zip -Algorithm SHA256
-Get-Content .\SHA256SUMS.txt
-```
-
-A matching checksum checks file integrity; it does not establish that the program is safe or that its use is authorized.
 
 ## Before running
 

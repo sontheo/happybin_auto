@@ -43,12 +43,10 @@ jobs:
         run: |
           Copy-Item README.md, README.en.md, LICENSE dist\HappybinAuto\
           Compress-Archive -Path dist\HappybinAuto -DestinationPath HappybinAuto-windows-x64.zip
-          Get-FileHash -Algorithm SHA256 HappybinAuto-windows-x64.zip | ForEach-Object { "$($_.Hash.ToLower())  HappybinAuto-windows-x64.zip" } | Set-Content -Encoding ascii SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HappybinAuto-windows-x64
           path: |
             HappybinAuto-windows-x64.zip
-            SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7

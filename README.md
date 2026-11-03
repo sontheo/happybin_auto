@@ -17,19 +17,10 @@
 
 **Windows x64와 대화형 데스크톱 환경**이 필요합니다. 배포 ZIP에는 프로그램과 Playwright용 Chromium이 포함되어 있으므로 Python이나 Git을 따로 설치할 필요가 없습니다.
 
-1. [최신 릴리스](https://github.com/sontheo/happybin_auto/releases/latest)에서 `HappybinAuto-windows-x64.zip`과 `SHA256SUMS.txt`를 다운로드합니다.
+1. [최신 릴리스](https://github.com/sontheo/happybin_auto/releases/latest)에서 `HappybinAuto-windows-x64.zip`을 다운로드합니다.
 2. ZIP을 폴더째 압축 해제하고, `HappybinAuto` 폴더의 `HappybinAuto.exe`를 실행합니다. 함께 제공되는 `_internal` 폴더를 실행 파일과 같은 위치에 두세요.
 3. 화면에서 **자동 수집 시작**을 누르고, 브라우저가 열리면 안내에 따라 NAVER에 로그인합니다. 자동화 중에는 브라우저 탭을 직접 조작하지 마세요.
 4. 진행 상태와 로그를 확인합니다. 중지 버튼은 진행 중인 작업에 중지 요청을 보냅니다.
-
-다운로드한 ZIP이 배포된 파일과 같은지 확인하려면 PowerShell에서 다음 값을 `SHA256SUMS.txt`의 값과 비교하세요. 두 파일을 같은 폴더에서 다운로드했다고 가정합니다.
-
-```powershell
-Get-FileHash .\HappybinAuto-windows-x64.zip -Algorithm SHA256
-Get-Content .\SHA256SUMS.txt
-```
-
-체크섬 일치는 파일 무결성을 확인하는 방법이며, 프로그램의 안전성이나 사용 권한을 보증하지 않습니다.
 
 ## 실행 전에 확인하세요
 
