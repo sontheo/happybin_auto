@@ -58,8 +58,8 @@ Post titles and bodies are defined in <code>content/templates.py</code>. The cur
 Run these commands in Windows PowerShell:
 
 ~~~powershell
-git clone https://github.com/sontheo/happybin_auto_public.git
-cd happybin_auto_public
+git clone https://github.com/sontheo/happybin_auto.git
+cd happybin_auto
 
 python -m venv .venv
 $env:PLAYWRIGHT_BROWSERS_PATH = "0"

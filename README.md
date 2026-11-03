@@ -58,8 +58,8 @@ flowchart LR
 Windows PowerShell에서 실행합니다.
 
 ~~~powershell
-git clone https://github.com/sontheo/happybin_auto_public.git
-cd happybin_auto_public
+git clone https://github.com/sontheo/happybin_auto.git
+cd happybin_auto
 
 python -m venv .venv
 $env:PLAYWRIGHT_BROWSERS_PATH = "0"
