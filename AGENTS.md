@@ -105,7 +105,7 @@ python main.py --status
 
 ## 빌드
 
-현재 공개 저장소는 소스만 제공하며 `build.bat`와 배포 ZIP은 포함하지 않는다.
+Windows 배포본은 `.github/workflows/windows-build.yml`에서 생성하고 Chromium 실행 여부를 확인한다.
 
 ## 주의사항
 

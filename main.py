@@ -14,6 +14,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reset-login", action="store_true", help="로그인 캐시 초기화")
     parser.add_argument("--list-users", action="store_true", help="등록 사용자 목록")
     parser.add_argument("--status", action="store_true", help="캐시 상태 표시")
+    parser.add_argument("--check-browser", action="store_true", help="설치된 Chromium 실행 확인")
     return parser.parse_args()
 
 
@@ -31,6 +32,17 @@ def show_status(username: str) -> None:
 def main() -> None:
     args = parse_args()
     username = args.user or getpass.getuser()
+    if args.check_browser:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_content("<title>Happybin Auto browser check</title>")
+            assert page.title() == "Happybin Auto browser check"
+            browser.close()
+        print("Chromium 실행 확인 완료")
+        return
     if args.list_users:
         users = list_users()
         print("등록된 사용자:")

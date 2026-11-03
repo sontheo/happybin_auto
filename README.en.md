@@ -11,7 +11,7 @@
   </p>
 </div>
 
-> **Project status** · This repository provides source code. It does not include a Windows executable, release ZIP, or build script.
+> **Project status** · Source code and a Windows x64 distribution are available. Download the latest ZIP and SHA-256 checksum from [Releases](../../releases).
 
 > **Notice** · This is an unofficial project and is not affiliated with, endorsed by, or sponsored by NAVER or Happybean. Use it only with accounts and destinations you are authorized to access, and follow NAVER's Terms of Service and applicable policies. Successful collection, continued service access, and account standing are not guaranteed. The software is provided as is, without warranties to the extent permitted by applicable law.
 
