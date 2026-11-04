@@ -89,20 +89,42 @@ class UpdateUiTests(unittest.TestCase):
         for row in self.app.step_rows:
             self.assertLessEqual(row.winfo_rooty() + row.winfo_height(), steps_bottom)
 
-    def test_activity_feed_filters_diagnostics_and_preserves_console(self):
+    def test_activity_feed_preserves_console_output(self):
         import io
         import queue
         events, console = queue.Queue(), io.StringIO()
         stream = ui._QueueStream(events, console)
         stream.write('[카페] 제목 입력 완료: private text')
-        self.assertTrue(events.empty())
+        self.assertEqual(events.get_nowait(), ('log', '[카페] 제목 입력 완료: private text'))
         self.assertIn('private text', console.getvalue())
         stream.write('[카페] 등록 완료! 현재 URL: private')
+        self.assertEqual(events.get_nowait(), ('log', '[카페] 등록 완료! 현재 URL: private'))
         self.assertEqual(events.get_nowait(), ('activity', '카페 글이 등록되었습니다.'))
+        self.app._append_raw_log('first ')
+        self.app._append_raw_log('second\nnext')
+        self.assertEqual(self.app.log.get('1.0', 'end-1c'), 'first second\nnext')
         self.app._show_progress('failed', 'private diagnostic')
         self.app._finish({})
         self.assertEqual(self.app.live_text.cget('text'), '오류')
         self.assertNotIn('private diagnostic', self.app.log.get('1.0', 'end'))
+
+    def test_worker_sends_stdout_and_stderr_to_activity_log(self):
+        import sys
+        def fake_run(username, progress, cancel):
+            print('first line')
+            print('error detail', file=sys.stderr)
+            progress('complete', 'summary')
+            return {}
+        with patch.object(ui, 'run_automation', fake_run):
+            self.app._start()
+            end = time.monotonic() + 3
+            while self.app.run_button['state'] == 'disabled' and time.monotonic() < end:
+                self.app.update()
+                time.sleep(.02)
+        output = self.app.log.get('1.0', 'end')
+        self.assertIn('first line\n', output)
+        self.assertIn('error detail\n', output)
+        self.assertEqual(self.app.run_button['state'], 'normal')
 
     def test_ready_update_waits_for_running_automation(self):
         self.app.update_state = 'ready'

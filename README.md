@@ -20,7 +20,7 @@
 1. [최신 릴리스](https://github.com/sontheo/happybin_auto/releases/latest)에서 `HappybinAuto-windows-x64.zip`을 다운로드합니다.
 2. ZIP을 폴더째 압축 해제하고, `HappybinAuto` 폴더의 `HappybinAuto.exe`를 실행합니다. 함께 제공되는 `_internal` 폴더를 실행 파일과 같은 위치에 두세요.
 3. 화면에서 **자동 수집 시작**을 누르고, 브라우저가 열리면 안내에 따라 NAVER에 로그인합니다. 자동화 중에는 브라우저 탭을 직접 조작하지 마세요.
-4. 진행 상태와 로그를 확인합니다. 중지 버튼은 진행 중인 작업에 중지 요청을 보냅니다.
+4. 현재 상황과 활동 기록에서 상세 로그를 확인합니다. 중지 버튼은 진행 중인 작업에 중지 요청을 보냅니다. 기본 UI는 별도 콘솔 창을 숨기며 기존 터미널에서 실행한 명령줄 모드는 유지합니다.
 
 ## 자동 업데이트
 
@@ -84,6 +84,6 @@ $env:HAPPYBIN_CAFE_URL = "https://cafe.naver.com/your-cafe"
 
 ## 라이선스와 제3자 소프트웨어
 
-프로젝트 코드는 [MIT License](https://github.com/sontheo/happybin_auto/blob/main/LICENSE)로 배포됩니다. 배포·복제 시 저작권 표시와 라이선스 고지를 포함해야 합니다. Playwright, Chromium 및 그 밖의 구성요소에는 각자의 라이선스와 고지가 별도로 적용됩니다. MIT 라이선스는 이들의 라이선스를 대체하지 않습니다.
+프로젝트 코드는 [MIT License](https://github.com/sontheo/happybin_auto/blob/main/LICENSE)로 배포됩니다. 배포·복제 시 저작권 표시와 라이선스 고지를 포함해야 합니다. Playwright, Chromium 및 그 밖의 구성요소에는 각자의 라이선스와 고지가 별도로 적용됩니다. 번들 Pretendard 글꼴은 SIL Open Font License 1.1을 따르며 원문은 배포본의 `_internal/assets/fonts/OFL.txt`에 포함됩니다. MIT 라이선스는 이들의 라이선스를 대체하지 않습니다.
 
 소스 코드와 빌드 구성은 [저장소](https://github.com/sontheo/happybin_auto)에서 확인할 수 있습니다. 저장소의 `test_*.py`, `verify_*.py`, `check_banners.py`는 실제 로그인이나 게시·클릭을 수행할 수 있는 수동 점검 스크립트입니다.

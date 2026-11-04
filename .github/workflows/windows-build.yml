@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = '0'
-          python -m PyInstaller --noconfirm --clean --onedir --console --name HappybinAuto main.py
+          python -m PyInstaller --noconfirm --clean --onedir --console --manifest windows/app.manifest --add-data "assets/fonts;assets/fonts" --name HappybinAuto main.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify packaged application and Chromium
         shell: pwsh

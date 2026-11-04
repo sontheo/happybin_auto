@@ -20,7 +20,7 @@ You need **Windows x64 and an interactive desktop**. The release ZIP includes th
 1. Download `HappybinAuto-windows-x64.zip` from the [latest release](https://github.com/sontheo/happybin_auto/releases/latest).
 2. Extract the ZIP and run `HappybinAuto.exe` inside the `HappybinAuto` folder. Keep the included `_internal` folder beside the executable.
 3. Select **자동 수집 시작** (start collection). When the browser opens, follow its prompts to sign in to NAVER. Do not manually operate its tabs while automation is running.
-4. Review the progress and logs. The stop button requests that the current run stop.
+4. Review the current status and full activity log. The stop button requests that the current run stop. The default UI hides its own console window; command-line mode remains available in an existing terminal.
 
 ## Automatic updates
 
@@ -84,6 +84,6 @@ Profile data is stored under `%LOCALAPPDATA%\HappyBeanAuto\<profile>\`. `browser
 
 ## License and third-party software
 
-Project code is distributed under the [MIT License](https://github.com/sontheo/happybin_auto/blob/main/LICENSE). Copies or substantial portions must retain the copyright and license notices. Playwright, Chromium, and other components have their own licenses and notices; the MIT License does not replace them.
+Project code is distributed under the [MIT License](https://github.com/sontheo/happybin_auto/blob/main/LICENSE). Copies or substantial portions must retain the copyright and license notices. Playwright, Chromium, and other components have their own licenses and notices; the MIT License does not replace them. Bundled Pretendard fonts are distributed under SIL Open Font License 1.1, included in `_internal/assets/fonts/OFL.txt`.
 
 Source code and build configuration are available in the [repository](https://github.com/sontheo/happybin_auto). The repository's `test_*.py`, `verify_*.py`, and `check_banners.py` files are manual integration tools that may perform real sign-ins, posts, or clicks.
