@@ -2,9 +2,11 @@ name: Build Windows distribution
 
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -12,6 +14,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -24,6 +28,14 @@ jobs:
           $env:PLAYWRIGHT_BROWSERS_PATH = '0'
           python -m playwright install chromium
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Embed release version
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v?\d+\.\d+\.\d+$') { throw "Release tag must be x.y.z or vx.y.z" }
+          Set-Content -Path app_version.py -Value "VERSION = `"$env:RELEASE_TAG`"" -Encoding utf8
       - name: Build executable
         shell: pwsh
         run: |
@@ -50,3 +62,12 @@ jobs:
             HappybinAuto-windows-x64.zip
           if-no-files-found: error
           retention-days: 7
+      - name: Attach ZIP to release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$env:RELEASE_TAG" HappybinAuto-windows-x64.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

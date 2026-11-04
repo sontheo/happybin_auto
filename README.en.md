@@ -22,6 +22,12 @@ You need **Windows x64 and an interactive desktop**. The release ZIP includes th
 3. Select **자동 수집 시작** (start collection). When the browser opens, follow its prompts to sign in to NAVER. Do not manually operate its tabs while automation is running.
 4. Review the progress and logs. The stop button requests that the current run stop.
 
+## Automatic updates
+
+The Windows distribution checks for a newer stable release at startup. With your consent it downloads the ZIP, verifies its SHA-256 digest, replaces the application, and restarts. Declining or being offline leaves the existing version usable. Extract the application to a writable location. Versions 4.1.0 and earlier do not have this feature and must first be updated manually.
+
+Publish a stable release with a three-part tag such as `4.2.0` or `v4.2.0`; GitHub Actions builds and attaches the ZIP. The update becomes available after the build finishes.
+
 ## Before running
 
 - **Real posts may be published.** The default workflow attempts to publish a blog post; it can also publish to a configured cafe. The default post uses a fixed title and a random numeric body.

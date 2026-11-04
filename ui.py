@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import getpass
 import queue
+import sys
 import threading
 import tkinter as tk
 from contextlib import redirect_stderr, redirect_stdout
@@ -11,6 +12,7 @@ from tkinter import messagebox, ttk
 from automation import run_automation
 from modules.session_manager import clear_session
 from modules.user_manager import clear_browser_data
+from modules import updater
 
 
 BG = "#f5f8f6"
@@ -75,6 +77,8 @@ class HappyBeanApp(tk.Tk):
         self._build()
         self.after(100, self._drain_events)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            threading.Thread(target=self._check_update, daemon=True).start()
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -204,6 +208,30 @@ class HappyBeanApp(tk.Tk):
                                       font=("맑은 고딕", 8, "underline"), cursor="hand2")
         self.reset_button.pack(side="right")
 
+    def _check_update(self) -> None:
+        try:
+            release = updater.check_update()
+            if release:
+                self.events.put(("update", release))
+        except Exception:
+            pass  # An unavailable release service must not block startup.
+
+    def _offer_update(self, release: dict) -> None:
+        if self.worker and self.worker.is_alive():
+            self.after(2000, lambda: self._offer_update(release))
+            return
+        if not messagebox.askyesno("업데이트", f"새 버전 {release['version']}이 있습니다. 지금 업데이트할까요?\n\n다운로드 후 프로그램을 다시 시작합니다.", parent=self):
+            return
+        self.run_button.configure(state="disabled")
+        self.reset_button.configure(state="disabled")
+        self.status.set("업데이트를 다운로드하고 검증하는 중입니다.")
+        def download() -> None:
+            try:
+                self.events.put(("update_ready", updater.stage_update(release)))
+            except Exception as exc:
+                self.events.put(("update_error", str(exc)))
+        threading.Thread(target=download, daemon=True).start()
+
     def _start(self) -> None:
         self.cancel_event.clear()
         self.run_button.configure(state="disabled", text="자동 수집 진행 중")
@@ -282,6 +310,20 @@ class HappyBeanApp(tk.Tk):
                     self._append_log(event[1])
                 elif event[0] == "progress":
                     self._show_progress(event[1], event[2])
+                elif event[0] == "update":
+                    self._offer_update(event[1])
+                elif event[0] == "update_ready":
+                    try:
+                        updater.launch_installer(event[1])
+                        self.destroy()
+                        return
+                    except Exception as exc:
+                        self.events.put(("update_error", str(exc)))
+                elif event[0] == "update_error":
+                    self.run_button.configure(state="normal")
+                    self.reset_button.configure(state="normal")
+                    self.status.set("업데이트에 실패했습니다. 기존 버전을 계속 사용할 수 있습니다.")
+                    messagebox.showerror("업데이트 실패", event[1], parent=self)
                 elif event[0] == "finished":
                     self._finish(event[1])
         except queue.Empty:
