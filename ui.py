@@ -30,6 +30,8 @@ AMBER_SOFT = "#f7efdb"
 AMBER_TEXT = "#634c1d"
 BORDER = "#dde2ea"
 RED = "#a33036"
+BODY_FONT = "맑은 고딕"
+NUMBER_FONT = "Segoe UI"
 
 
 def enable_dpi_awareness() -> None:
@@ -52,20 +54,22 @@ def enable_dpi_awareness() -> None:
 
 class RoundedPanel(tk.Canvas):
     """A solid rounded surface which follows its content and the window width."""
-    def __init__(self, parent, *, padx=0, pady=0):
+    def __init__(self, parent, *, padx=0, pady=0, stretch=False):
         super().__init__(parent, bg=BG, highlightthickness=0, bd=0)
+        self.stretch = stretch
         self.body = tk.Frame(self, bg=SURFACE, padx=padx, pady=pady)
         self.shape = self.create_polygon(0, 0, 0, 0, smooth=True, splinesteps=24, fill=SURFACE, outline=SURFACE)
-        self.content = self.create_window(12, 12, anchor="nw", window=self.body)
+        self.content = self.create_window(8, 8, anchor="nw", window=self.body)
         self.body.bind("<Configure>", self._resize)
         self.bind("<Configure>", self._resize)
 
     def _resize(self, event=None):
         width = max(self.winfo_width(), 32)
-        height = self.body.winfo_reqheight() + 24
-        self.itemconfigure(self.content, width=max(width - 24, 1))
-        if self.winfo_reqheight() != height:
-            self.configure(height=height)
+        requested = self.body.winfo_reqheight() + 16
+        height = max(requested, self.winfo_height()) if self.stretch else requested
+        self.itemconfigure(self.content, width=max(width - 16, 1), height=max(height - 16, 1) if self.stretch else 0)
+        if self.winfo_reqheight() != requested:
+            self.configure(height=requested)
         r = 16
         self.coords(self.shape, 0, r, 0, 0, r, 0, width-r, 0, width, 0, width, r,
                     width, height-r, width, height, width-r, height, r, height,
@@ -85,7 +89,7 @@ class RoundedButton(tk.Canvas):
         self._hover_color = hover
         self._hovered = False
         self._pressed = False
-        self._font = tkfont.Font(parent, family="맑은 고딕", size=9, weight="bold")
+        self._font = tkfont.Font(parent, family=BODY_FONT, size=9, weight="bold")
         scale = max(1.0, parent.winfo_fpixels("1i") / 96.0)
         self._minimum = int(min_width * scale)
         self._height = max(int(height * scale), self._font.metrics("linespace") + 8)
@@ -168,16 +172,40 @@ class RoundedButton(tk.Canvas):
 
 
 class _QueueStream:
-    def __init__(self, events: queue.Queue) -> None:
+    # Only recognized, user-meaningful milestones enter the activity feed.
+    MILESTONES = (
+        ("QR코드 로그인을 실행해주세요", "네이버 앱에서 QR 로그인을 진행해 주세요."),
+        ("브라우저에서 직접 로그인해주세요", "브라우저에서 직접 로그인해 주세요."),
+        ("이미 로그인되어 있습니다", "로그인 상태를 확인했습니다."),
+        ("로그인 성공!", "로그인이 완료되었습니다."),
+        ("[블로그] 발행 완료!", "블로그 글이 발행되었습니다."),
+        ("[카페] 등록 완료!", "카페 글이 등록되었습니다."),
+        ("카페 작업을 건너뜁니다", "카페 설정이 없어 카페 작업을 건너뜁니다."),
+        ("콩 획득 확인!", "콩 획득을 확인했습니다."),
+    )
+
+    def __init__(self, events: queue.Queue, original=None) -> None:
         self.events = events
+        self.original = original
 
     def write(self, text: str) -> int:
-        if text and not text.isspace():
-            self.events.put(("log", text.rstrip()))
+        if self.original is not None:
+            try:
+                self.original.write(text)
+            except (OSError, ValueError):
+                pass
+        for marker, summary in self.MILESTONES:
+            if marker in text:
+                self.events.put(("activity", summary))
+                break
         return len(text)
 
     def flush(self) -> None:
-        pass
+        if self.original is not None:
+            try:
+                self.original.flush()
+            except (OSError, ValueError):
+                pass
 
 
 class HappyBeanApp(tk.Tk):
@@ -194,6 +222,10 @@ class HappyBeanApp(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
+        global BODY_FONT, NUMBER_FONT
+        families = set(tkfont.families(self))
+        BODY_FONT = next((family for family in ("Pretendard", "맑은 고딕", "Malgun Gothic", "Noto Sans CJK KR") if family in families), "TkDefaultFont")
+        NUMBER_FONT = "Segoe UI" if "Segoe UI" in families else BODY_FONT
         self.title("콩콩줍줍")
         # Tk uses point-sized fonts; size the window for the active display DPI.
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
@@ -215,8 +247,11 @@ class HappyBeanApp(tk.Tk):
         self.status = tk.StringVar(value="준비됨 — 실행하면 로그인 상태를 확인합니다.")
         self.bean_detail = tk.StringVar(value="아직 확인된 콩 획득 내역이 없습니다")
         self.bean_total = tk.StringVar(value="+0콩")
+        self.current_status = tk.StringVar(value="수집 대기 중")
+        self.last_progress_state = "idle"
         self.step_states: dict[str, tk.StringVar] = {}
         self.step_icons: dict[str, tk.Label] = {}
+        self.step_rows: list[tk.Frame] = []
         self._configure_style()
         self._build()
         self.after(100, self._drain_events)
@@ -234,7 +269,7 @@ class HappyBeanApp(tk.Tk):
 
     @staticmethod
     def _label(parent, text: str | tk.StringVar, **kwargs) -> tk.Label:
-        defaults = {"bg": parent.cget("bg"), "fg": TEXT, "font": ("맑은 고딕", 10)}
+        defaults = {"bg": parent.cget("bg"), "fg": TEXT, "font": (BODY_FONT, 10)}
         defaults.update(kwargs)
         if isinstance(text, tk.Variable):
             return tk.Label(parent, textvariable=text, **defaults)
@@ -248,8 +283,8 @@ class HappyBeanApp(tk.Tk):
         header.pack(fill="x", pady=(0, 8))
         brand = tk.Frame(header, bg=BG)
         brand.pack(side="left")
-        self._label(brand, "콩콩줍줍", font=("맑은 고딕", 19, "bold")).pack(anchor="w")
-        self._label(brand, "나의 해피빈 수집", fg=MUTED, font=("맑은 고딕", 10)).pack(anchor="w", pady=(1, 0))
+        self._label(brand, "콩콩줍줍", font=(BODY_FONT, 17, "bold")).pack(anchor="w")
+        self._label(brand, "나의 해피빈 수집", fg=MUTED, font=(BODY_FONT, 10)).pack(anchor="w", pady=(1, 0))
         self.update_button = RoundedButton(header, textvariable=self.update_status, command=self._update_action,
                                            fill="#e4ebf7", hover="#d7e5fa", min_width=120)
         self.update_button.pack(side="right")
@@ -260,26 +295,24 @@ class HappyBeanApp(tk.Tk):
         hero = hero_panel.body
         top = tk.Frame(hero, bg=SURFACE)
         top.pack(fill="x")
-        self._label(top, "오늘의 수집", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10, "bold")).pack(side="left")
+        self._label(top, "오늘의 수집", bg=SURFACE, fg=MUTED, font=(BODY_FONT, 10, "bold")).pack(side="left")
         live = tk.Frame(top, bg=SURFACE)
         live.pack(side="right")
-        self.live_dot = self._label(live, "●", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9))
+        self.live_dot = self._label(live, "●", bg=SURFACE, fg=MUTED, font=(BODY_FONT, 9))
         self.live_dot.pack(side="left")
-        self.live_text = self._label(live, "준비", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9, "bold"))
+        self.live_text = self._label(live, "준비", bg=SURFACE, fg=MUTED, font=(BODY_FONT, 9, "bold"))
         self.live_text.pack(side="left", padx=(5, 0))
-        self._label(hero, self.bean_total, bg=SURFACE, fg=TEXT, font=("맑은 고딕", 23, "bold")).pack(anchor="w", pady=(2, 0))
-        self._label(hero, self.bean_detail, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
-        tk.Frame(hero, bg=BG, height=1).pack(fill="x", pady=(8, 6))
+        self._label(hero, self.bean_total, bg=SURFACE, fg=TEXT, font=(NUMBER_FONT, 20, "bold")).pack(anchor="w")
+        self._label(hero, self.bean_detail, bg=SURFACE, fg=MUTED, font=(BODY_FONT, 9)).pack(anchor="w")
+        tk.Frame(hero, bg=BG, height=1).pack(fill="x", pady=(3, 3))
         self.stage = tk.Frame(hero, bg=SURFACE)
         self.stage.pack(fill="x")
-        self.stage_title = self._label(self.stage, "실행할 준비가 되었습니다", bg=SURFACE, font=("맑은 고딕", 12, "bold"))
+        self.stage_title = self._label(self.stage, "실행할 준비가 되었습니다", bg=SURFACE, font=(BODY_FONT, 12, "bold"))
         self.stage_title.pack(anchor="w")
-        self.stage_detail = self._label(self.stage, self.status, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9), anchor="w")
-        self.stage_detail.pack(fill="x", pady=(3, 0))
         self.progress = ttk.Progressbar(self.stage, style="HB.Horizontal.TProgressbar", mode="determinate", maximum=100, value=0)
-        self.progress.pack(fill="x", pady=(6, 0))
+        self.progress.pack(fill="x", pady=(3, 0))
         actions = tk.Frame(hero, bg=SURFACE)
-        actions.pack(fill="x", pady=(8, 0))
+        actions.pack(fill="x", pady=(4, 0))
         self.run_button = RoundedButton(actions, text="자동 수집 시작", command=self._start,
                                         fill=GREEN, foreground=SURFACE, hover=GREEN_DARK, min_width=190)
         self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 10))
@@ -298,36 +331,47 @@ class HappyBeanApp(tk.Tk):
         right.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         title_row = tk.Frame(left, bg=BG)
         title_row.pack(fill="x", pady=(0, 3))
-        self._label(title_row, "수집 과정", font=("맑은 고딕", 12, "bold")).pack(side="left")
+        self._label(title_row, "수집 과정", font=(BODY_FONT, 12, "bold")).pack(side="left")
         self.cafe_button = RoundedButton(title_row, text="카페 설정  ›", command=self._edit_cafe,
                                          fill="#e4ebf7", hover="#d7e5fa", min_width=95)
         self.cafe_button.pack(side="right")
-        steps_panel = RoundedPanel(left, padx=5, pady=0)
-        steps_panel.pack(fill="x")
+        steps_panel = RoundedPanel(left, padx=5, pady=0, stretch=True)
+        self.steps_panel = steps_panel
+        steps_panel.pack(fill="both", expand=True)
         steps = steps_panel.body
         for index, key in enumerate(self.STEP_ORDER):
             if index:
                 tk.Frame(steps, bg=BG, height=1).pack(fill="x")
             row = tk.Frame(steps, bg=SURFACE, pady=1)
-            row.pack(fill="x")
-            icon = self._label(row, "○", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10))
+            row.pack(fill="both", expand=True)
+            self.step_rows.append(row)
+            icon = self._label(row, "○", bg=SURFACE, fg=MUTED, font=(BODY_FONT, 10))
             icon.pack(side="left", padx=(0, 12))
             self.step_icons[key] = icon
-            self._label(row, self.STEP_TITLES[key], bg=SURFACE, font=("맑은 고딕", 9)).pack(side="left")
+            self._label(row, self.STEP_TITLES[key], bg=SURFACE, font=(BODY_FONT, 9)).pack(side="left")
             state = tk.StringVar(value="대기")
             self.step_states[key] = state
-            self._label(row, state, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(side="right")
+            self._label(row, state, bg=SURFACE, fg=MUTED, font=(BODY_FONT, 9)).pack(side="right")
 
-        self._label(right, "활동 기록", font=("맑은 고딕", 12, "bold")).pack(anchor="w", pady=(7, 11))
-        log_panel = RoundedPanel(right, padx=2, pady=0)
+        right_heading = tk.Frame(right, bg=BG, height=self.cafe_button._height + 7)
+        right_heading.pack(fill="x")
+        right_heading.pack_propagate(False)
+        self._label(right_heading, "현재 상황", font=(BODY_FONT, 12, "bold")).pack(side="left")
+        current_panel = RoundedPanel(right, padx=2, pady=0)
+        current_panel.pack(fill="x")
+        self._label(current_panel.body, self.current_status, bg=SURFACE, fg=TEXT,
+                    font=(BODY_FONT, 9), anchor="w", justify="left", height=1).pack(fill="x")
+        self._label(right, "활동 기록", font=(BODY_FONT, 10, "bold"), fg=MUTED).pack(anchor="w", pady=(4, 3))
+        log_panel = RoundedPanel(right, padx=2, pady=0, stretch=True)
+        self.log_panel = log_panel
         log_panel.pack(fill="both", expand=True)
         log_box = log_panel.body
-        self.log = tk.Text(log_box, height=5, state="disabled", wrap="word", bg=SURFACE, fg=TEXT,
-                           insertbackground=TEXT, relief="flat", highlightthickness=0, font=("맑은 고딕", 9), padx=4, pady=4)
-        self.log.pack(side="left", fill="both", expand=True)
+        self.log = tk.Text(log_box, height=1, state="disabled", wrap="word", bg=SURFACE, fg=TEXT,
+                           insertbackground=TEXT, relief="flat", highlightthickness=0, font=(BODY_FONT, 9), padx=4, pady=0)
+        self.log.pack(fill="both", expand=True)
         footer = tk.Frame(outer, bg=BG)
-        footer.pack(fill="x", pady=(3, 0))
-        self._label(footer, "수집 중에는 브라우저를 직접 조작하지 마세요.", fg=MUTED, font=("맑은 고딕", 9)).pack(side="left")
+        footer.pack(side="bottom", fill="x", pady=(3, 0), before=sections)
+        self._label(footer, "수집 중에는 브라우저를 직접 조작하지 마세요.", fg=MUTED, font=(BODY_FONT, 9)).pack(side="left")
         self.reset_button = RoundedButton(footer, text="로그인 초기화", command=self._reset_login,
                                           fill=BG, foreground=MUTED, hover=BORDER, height=28)
         self.reset_button.pack(side="right")
@@ -344,12 +388,12 @@ class HappyBeanApp(tk.Tk):
             cafe_id, cafe_url = 0, ""
         id_var = tk.StringVar(value=str(cafe_id) if cafe_id else "")
         url_var = tk.StringVar(value=cafe_url)
-        self._label(dialog, "카페 설정", bg=SURFACE, font=("맑은 고딕", 15, "bold")).pack(anchor="w")
+        self._label(dialog, "카페 설정", bg=SURFACE, font=(BODY_FONT, 15, "bold")).pack(anchor="w")
         self._label(dialog, "글쓰기와 카페 배너 확인에 사용할 카페입니다.", bg=SURFACE, fg=MUTED,
-                    font=("맑은 고딕", 9)).pack(anchor="w", pady=(5, 14))
+                    font=(BODY_FONT, 9)).pack(anchor="w", pady=(5, 14))
         for label, variable in (("카페 숫자 ID", id_var), ("카페 주소", url_var)):
-            self._label(dialog, label, bg=SURFACE, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(4, 3))
-            tk.Entry(dialog, textvariable=variable, width=45, font=("맑은 고딕", 10), relief="solid", bd=1).pack(fill="x", ipady=5, pady=(0, 8))
+            self._label(dialog, label, bg=SURFACE, font=(BODY_FONT, 9, "bold")).pack(anchor="w", pady=(4, 3))
+            tk.Entry(dialog, textvariable=variable, width=45, font=(BODY_FONT, 10), relief="solid", bd=1).pack(fill="x", ipady=5, pady=(0, 8))
         def fill_cafe() -> None:
             id_var.set("31172912")
             url_var.set("https://cafe.naver.com/dpbokji1")
@@ -357,7 +401,7 @@ class HappyBeanApp(tk.Tk):
                                            fill=GREEN_SOFT, hover="#d7e5fa", min_width=180)
         self.preset_button.pack(anchor="w", pady=(0, 8))
         self._label(dialog, "같은 카페의 ID와 주소를 입력하세요. 둘 다 비우면 건너뜁니다.", bg=SURFACE, fg=MUTED,
-                    font=("맑은 고딕", 9)).pack(anchor="w", pady=(0, 12))
+                    font=(BODY_FONT, 9)).pack(anchor="w", pady=(0, 12))
         def save() -> None:
             try:
                 cafe_id, cafe_url = config.validate_cafe(id_var.get(), url_var.get())
@@ -426,6 +470,8 @@ class HappyBeanApp(tk.Tk):
 
     def _start(self) -> None:
         self.cancel_event.clear()
+        self.last_progress_state = "starting"
+        self.current_status.set("수집을 시작합니다.")
         self.run_button.configure(state="disabled", text="자동 수집 진행 중")
         self.reset_button.configure(state="disabled")
         self.cafe_button.configure(state="disabled")
@@ -443,18 +489,21 @@ class HappyBeanApp(tk.Tk):
         self.worker.start()
 
     def _run_worker(self, username: str) -> None:
-        stream = _QueueStream(self.events)
+        stdout = _QueueStream(self.events, sys.stdout)
+        stderr = _QueueStream(self.events, sys.stderr)
 
         def progress(state: str, message: str) -> None:
             self.events.put(("progress", state, message))
 
-        with redirect_stdout(stream), redirect_stderr(stream):
+        with redirect_stdout(stdout), redirect_stderr(stderr):
             results = run_automation(username, progress, self.cancel_event)
         self.events.put(("finished", results))
 
     def _cancel(self) -> None:
         self.cancel_event.set()
         self.status.set("중지 요청됨 — 현재 작업을 정리한 뒤 안전하게 종료합니다.")
+        self.current_status.set("현재 작업을 정리하고 있습니다.")
+        self._append_log("중지를 요청했습니다.")
         self.stage_title.configure(text="중지 요청됨")
         self.cancel_button.configure(state="disabled", text="중지 요청됨")
 
@@ -480,7 +529,19 @@ class HappyBeanApp(tk.Tk):
             icon.configure(text="✓", fg=GREEN)
 
     def _show_progress(self, state: str, message: str) -> None:
-        self.status.set(message.replace("\n", " "))
+        self.last_progress_state = state
+        if state in self.PROGRESS and state != "complete":
+            current, _ = self.PROGRESS[state]
+            summary = self.STEP_TITLES[current] + " 중"
+            self.status.set(message.replace("\n", " "))
+            self.current_status.set(summary)
+            self._append_log(summary)
+        elif state == "failed":
+            self.status.set("실행 중 문제가 발생했습니다.")
+            self.current_status.set("실행 실패 · 콘솔 확인")
+            self._append_log("실행 중 문제가 발생했습니다.")
+        elif state == "cancelled":
+            self.current_status.set("수집이 중지되었습니다.")
         if state not in self.PROGRESS:
             return
         current, amount = self.PROGRESS[state]
@@ -499,7 +560,15 @@ class HappyBeanApp(tk.Tk):
         try:
             while True:
                 event = self.events.get_nowait()
-                if event[0] == "log":
+                if event[0] == "activity":
+                    current = event[1]
+                    if "QR 로그인" in current:
+                        current = "QR 로그인 필요"
+                    elif "직접 로그인" in current:
+                        current = "브라우저에서 로그인 필요"
+                    elif "카페 설정이 없어" in current:
+                        current = "카페 작업 건너뜀"
+                    self.current_status.set(current)
                     self._append_log(event[1])
                 elif event[0] == "progress":
                     self._show_progress(event[1], event[2])
@@ -528,7 +597,7 @@ class HappyBeanApp(tk.Tk):
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")
-        self.log.insert("end", text + ("" if text.endswith("\n") else "\n"))
+        self.log.insert("end", text.strip() + "\n")
         self.log.see("end")
         self.log.configure(state="disabled")
 
@@ -557,10 +626,17 @@ class HappyBeanApp(tk.Tk):
         if self.cancel_event.is_set():
             self.stage_title.configure(text="실행이 중지되었습니다")
             self.status.set("중지됨")
+            self.current_status.set("수집이 중지되었습니다.")
+            self._append_log("수집이 중지되었습니다.")
+        elif self.last_progress_state == "failed":
+            self.live_text.configure(text="오류", fg=RED)
+            self.stage_title.configure(text="수집을 완료하지 못했습니다")
         else:
             success = sum(1 for value in results.values() if value)
             self.stage_title.configure(text="자동 수집이 완료되었습니다")
             self.status.set(f"완료 — {len(results)}개 중 {success}개 성공")
+            self.current_status.set(f"수집 완료 · {success}/{len(results)} 성공")
+            self._append_log(f"수집 완료: {len(results)}개 중 {success}개 성공")
             self.progress.configure(value=100)
             if results.get("블로그 콩배너"):
                 self._set_step_state("블로그", "+1콩 획득")

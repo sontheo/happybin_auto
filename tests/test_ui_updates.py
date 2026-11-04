@@ -74,12 +74,35 @@ class UpdateUiTests(unittest.TestCase):
     def test_main_controls_fit_in_window(self):
         self.app.update_idletasks()
         for widget in (self.app.run_button, self.app.cancel_button, self.app.cafe_button,
-                       self.app.log, self.app.reset_button, self.app.update_button):
+                       self.app.log, self.app.reset_button, self.app.update_button, *self.app.step_rows):
             with self.subTest(widget=widget):
                 self.assertGreater(widget.winfo_width(), 1)
                 self.assertGreater(widget.winfo_height(), 1)
                 self.assertLessEqual(widget.winfo_rooty() + widget.winfo_height(),
                                      self.app.winfo_rooty() + self.app.winfo_height())
+
+    def test_sections_align_and_show_all_steps(self):
+        self.app.update_idletasks()
+        steps_bottom = self.app.steps_panel.winfo_rooty() + self.app.steps_panel.winfo_height()
+        log_bottom = self.app.log_panel.winfo_rooty() + self.app.log_panel.winfo_height()
+        self.assertLessEqual(abs(steps_bottom - log_bottom), 2)
+        for row in self.app.step_rows:
+            self.assertLessEqual(row.winfo_rooty() + row.winfo_height(), steps_bottom)
+
+    def test_activity_feed_filters_diagnostics_and_preserves_console(self):
+        import io
+        import queue
+        events, console = queue.Queue(), io.StringIO()
+        stream = ui._QueueStream(events, console)
+        stream.write('[카페] 제목 입력 완료: private text')
+        self.assertTrue(events.empty())
+        self.assertIn('private text', console.getvalue())
+        stream.write('[카페] 등록 완료! 현재 URL: private')
+        self.assertEqual(events.get_nowait(), ('activity', '카페 글이 등록되었습니다.'))
+        self.app._show_progress('failed', 'private diagnostic')
+        self.app._finish({})
+        self.assertEqual(self.app.live_text.cget('text'), '오류')
+        self.assertNotIn('private diagnostic', self.app.log.get('1.0', 'end'))
 
     def test_ready_update_waits_for_running_automation(self):
         self.app.update_state = 'ready'
