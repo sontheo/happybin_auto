@@ -9,7 +9,7 @@ import sys
 import threading
 import tkinter as tk
 from contextlib import redirect_stderr, redirect_stdout
-from tkinter import messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 
 from automation import run_automation
 from modules.session_manager import clear_session
@@ -72,6 +72,101 @@ class RoundedPanel(tk.Canvas):
                     0, height, 0, height-r)
 
 
+class RoundedButton(tk.Canvas):
+    """Keyboard-accessible pill button with a real disabled state."""
+    def __init__(self, parent, *, text="", textvariable=None, command=None,
+                 fill=GREEN_SOFT, foreground=GREEN_DARK, hover=GREEN_SOFT,
+                 state="normal", min_width=76, height=36):
+        self._text = text
+        self._variable = textvariable
+        self._command = command
+        self._fill = fill
+        self._foreground = foreground
+        self._hover_color = hover
+        self._hovered = False
+        self._pressed = False
+        self._font = tkfont.Font(parent, family="맑은 고딕", size=9, weight="bold")
+        scale = max(1.0, parent.winfo_fpixels("1i") / 96.0)
+        self._minimum = int(min_width * scale)
+        self._height = max(int(height * scale), self._font.metrics("linespace") + 8)
+        super().__init__(parent, bg=parent.cget("bg"), highlightthickness=2,
+                         highlightbackground=parent.cget("bg"), highlightcolor=GREEN,
+                         bd=0, height=self._height, width=self._minimum,
+                         state=state, takefocus=True, cursor="hand2")
+        self._shape = self.create_polygon(0, 0, 0, 0, smooth=True, splinesteps=24, outline="")
+        self._label_id = self.create_text(0, 0, text="", font=self._font)
+        if self._variable is not None:
+            self._trace = self._variable.trace_add("write", lambda *_: self._redraw())
+            self.bind("<Destroy>", self._untrace, add="+")
+        self.bind("<Configure>", self._redraw)
+        self.bind("<Enter>", lambda e: self._set_hover(True))
+        self.bind("<Leave>", lambda e: self._set_hover(False))
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self.bind("<space>", self._key_invoke)
+        self.bind("<Return>", self._key_invoke)
+        self._redraw()
+
+    def _untrace(self, event):
+        if event.widget is self and self._variable is not None:
+            try:
+                self._variable.trace_remove("write", self._trace)
+            except tk.TclError:
+                pass
+
+    def _set_hover(self, hovered):
+        self._hovered = hovered
+        self._redraw()
+
+    def _press(self, event):
+        if self.cget("state") != "disabled":
+            self.focus_set()
+            self._pressed = True
+            self._redraw()
+
+    def _release(self, event):
+        pressed = self._pressed
+        self._pressed = False
+        self._redraw()
+        if pressed and 0 <= event.x < self.winfo_width() and 0 <= event.y < self.winfo_height():
+            self.invoke()
+
+    def _key_invoke(self, event):
+        self.invoke()
+        return "break"
+
+    def invoke(self):
+        if self.cget("state") != "disabled" and self._command:
+            return self._command()
+
+    def configure(self, cnf=None, **kwargs):
+        if "text" in kwargs:
+            self._text = kwargs.pop("text")
+        result = super().configure(cnf, **kwargs)
+        if hasattr(self, "_label_id"):
+            self._redraw()
+        return result
+
+    config = configure
+
+    def _redraw(self, event=None):
+        if not self.winfo_exists():
+            return
+        text = self._variable.get() if self._variable is not None else self._text
+        wanted = max(self._minimum, self._font.measure(text) + 28)
+        if int(super().cget("width")) != wanted:
+            super().configure(width=wanted)
+        w, h = max(self.winfo_width(), 1), max(self.winfo_height(), 1)
+        r = h / 2
+        self.coords(self._shape, 0, r, 0, 0, r, 0, w-r, 0, w, 0, w, r,
+                    w, h-r, w, h, w-r, h, r, h, 0, h, 0, h-r)
+        disabled = self.cget("state") == "disabled"
+        fill = "#e9ecf1" if disabled else (self._hover_color if self._hovered or self._pressed else self._fill)
+        self.itemconfigure(self._shape, fill=fill)
+        self.coords(self._label_id, w / 2, h / 2)
+        self.itemconfigure(self._label_id, text=text, fill="#8b95a3" if disabled else self._foreground)
+
+
 class _QueueStream:
     def __init__(self, events: queue.Queue) -> None:
         self.events = events
@@ -103,10 +198,10 @@ class HappyBeanApp(tk.Tk):
         # Tk uses point-sized fonts; size the window for the active display DPI.
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         width = min(int(620 * scale), self.winfo_screenwidth() - 32)
-        height = min(int(750 * scale), self.winfo_screenheight() - 64)
+        height = min(int(680 * scale), self.winfo_screenheight() - 48)
         self.geometry(f"{width}x{height}+24+24")
-        self.minsize(min(width, int(520 * scale)), min(height, int(580 * scale)))
-        self.resizable(True, True)
+        self.minsize(width, height)
+        self.resizable(True, False)
         self.configure(bg=BG)
         self.events: queue.Queue = queue.Queue()
         self.cancel_event = threading.Event()
@@ -146,45 +241,21 @@ class HappyBeanApp(tk.Tk):
         return tk.Label(parent, text=text, **defaults)
 
     def _build(self) -> None:
-        viewport = tk.Frame(self, bg=BG)
-        viewport.pack(fill="both", expand=True)
-        canvas = tk.Canvas(viewport, bg=BG, highlightthickness=0, borderwidth=0)
-        scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-        outer = tk.Frame(canvas, bg=BG, padx=22, pady=18)
-        window = canvas.create_window((0, 0), window=outer, anchor="nw")
-        def resize_content(event=None):
-            canvas.itemconfigure(window, width=canvas.winfo_width(),
-                                 height=max(canvas.winfo_height(), outer.winfo_reqheight()))
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        outer.bind("<Configure>", resize_content)
-        canvas.bind("<Configure>", resize_content)
-        def scroll_page(event):
-            if event.widget.winfo_toplevel() != self or event.widget is self.log:
-                return
-            amount = -1 if getattr(event, "num", 0) == 4 or getattr(event, "delta", 0) > 0 else 1
-            canvas.yview_scroll(amount, "units")
-            return "break"
-        self.bind_all("<MouseWheel>", scroll_page)
-        self.bind_all("<Button-4>", scroll_page)
-        self.bind_all("<Button-5>", scroll_page)
+        outer = tk.Frame(self, bg=BG, padx=18, pady=10)
+        outer.pack(fill="both", expand=True)
 
         header = tk.Frame(outer, bg=BG)
-        header.pack(fill="x", pady=(4, 18))
+        header.pack(fill="x", pady=(0, 8))
         brand = tk.Frame(header, bg=BG)
         brand.pack(side="left")
-        self._label(brand, "콩콩줍줍", font=("맑은 고딕", 23, "bold")).pack(anchor="w")
+        self._label(brand, "콩콩줍줍", font=("맑은 고딕", 19, "bold")).pack(anchor="w")
         self._label(brand, "나의 해피빈 수집", fg=MUTED, font=("맑은 고딕", 10)).pack(anchor="w", pady=(1, 0))
-        self.update_button = tk.Button(header, textvariable=self.update_status, command=self._update_action,
-                                       bg=BG, fg=GREEN_DARK, activebackground=GREEN_SOFT,
-                                       activeforeground=GREEN_DARK, relief="flat", padx=10, pady=9,
-                                       font=("맑은 고딕", 9, "bold"), cursor="hand2", takefocus=True)
+        self.update_button = RoundedButton(header, textvariable=self.update_status, command=self._update_action,
+                                           fill="#e4ebf7", hover="#d7e5fa", min_width=120)
         self.update_button.pack(side="right")
 
         # A single primary surface keeps the current task, result and action together.
-        hero_panel = RoundedPanel(outer, padx=10, pady=8)
+        hero_panel = RoundedPanel(outer, padx=8, pady=0)
         hero_panel.pack(fill="x")
         hero = hero_panel.body
         top = tk.Frame(hero, bg=SURFACE)
@@ -196,9 +267,9 @@ class HappyBeanApp(tk.Tk):
         self.live_dot.pack(side="left")
         self.live_text = self._label(live, "준비", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9, "bold"))
         self.live_text.pack(side="left", padx=(5, 0))
-        self._label(hero, self.bean_total, bg=SURFACE, fg=TEXT, font=("맑은 고딕", 29, "bold")).pack(anchor="w", pady=(8, 0))
+        self._label(hero, self.bean_total, bg=SURFACE, fg=TEXT, font=("맑은 고딕", 23, "bold")).pack(anchor="w", pady=(2, 0))
         self._label(hero, self.bean_detail, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
-        tk.Frame(hero, bg=BG, height=1).pack(fill="x", pady=(17, 14))
+        tk.Frame(hero, bg=BG, height=1).pack(fill="x", pady=(8, 6))
         self.stage = tk.Frame(hero, bg=SURFACE)
         self.stage.pack(fill="x")
         self.stage_title = self._label(self.stage, "실행할 준비가 되었습니다", bg=SURFACE, font=("맑은 고딕", 12, "bold"))
@@ -206,32 +277,38 @@ class HappyBeanApp(tk.Tk):
         self.stage_detail = self._label(self.stage, self.status, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9), anchor="w")
         self.stage_detail.pack(fill="x", pady=(3, 0))
         self.progress = ttk.Progressbar(self.stage, style="HB.Horizontal.TProgressbar", mode="determinate", maximum=100, value=0)
-        self.progress.pack(fill="x", pady=(12, 0))
+        self.progress.pack(fill="x", pady=(6, 0))
         actions = tk.Frame(hero, bg=SURFACE)
-        actions.pack(fill="x", pady=(16, 0))
-        self.run_button = tk.Button(actions, text="자동 수집 시작", command=self._start, bg=GREEN, fg=SURFACE,
-                                    activebackground=GREEN_DARK, activeforeground=SURFACE, relief="flat", bd=0,
-                                    font=("맑은 고딕", 10, "bold"), pady=10, cursor="hand2", takefocus=True)
+        actions.pack(fill="x", pady=(8, 0))
+        self.run_button = RoundedButton(actions, text="자동 수집 시작", command=self._start,
+                                        fill=GREEN, foreground=SURFACE, hover=GREEN_DARK, min_width=190)
         self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        self.cancel_button = tk.Button(actions, text="중지", command=self._cancel, state="disabled", bg=BG,
-                                       fg=RED, activebackground="#f8e8e9", relief="flat", bd=0, padx=20, pady=10,
-                                       font=("맑은 고딕", 10, "bold"), cursor="hand2", takefocus=True)
+        self.cancel_button = RoundedButton(actions, text="중지", command=self._cancel, state="disabled",
+                                           fill=BG, foreground=RED, hover="#f8e8e9")
         self.cancel_button.pack(side="right")
 
-        title_row = tk.Frame(outer, bg=BG)
-        title_row.pack(fill="x", pady=(22, 8))
+        sections = tk.Frame(outer, bg=BG)
+        sections.pack(fill="both", expand=True, pady=(7, 0))
+        sections.columnconfigure(0, weight=6, uniform="sections")
+        sections.columnconfigure(1, weight=5, uniform="sections")
+        sections.rowconfigure(0, weight=1)
+        left = tk.Frame(sections, bg=BG)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        right = tk.Frame(sections, bg=BG)
+        right.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        title_row = tk.Frame(left, bg=BG)
+        title_row.pack(fill="x", pady=(0, 3))
         self._label(title_row, "수집 과정", font=("맑은 고딕", 12, "bold")).pack(side="left")
-        self.cafe_button = tk.Button(title_row, text="카페 설정  ›", command=self._edit_cafe, bg=BG, fg=GREEN_DARK,
-                                     activebackground=GREEN_SOFT, relief="flat", bd=0, padx=8, pady=4,
-                                     font=("맑은 고딕", 9, "bold"), cursor="hand2", takefocus=True)
+        self.cafe_button = RoundedButton(title_row, text="카페 설정  ›", command=self._edit_cafe,
+                                         fill="#e4ebf7", hover="#d7e5fa", min_width=95)
         self.cafe_button.pack(side="right")
-        steps_panel = RoundedPanel(outer, padx=5, pady=0)
+        steps_panel = RoundedPanel(left, padx=5, pady=0)
         steps_panel.pack(fill="x")
         steps = steps_panel.body
         for index, key in enumerate(self.STEP_ORDER):
             if index:
                 tk.Frame(steps, bg=BG, height=1).pack(fill="x")
-            row = tk.Frame(steps, bg=SURFACE, pady=5)
+            row = tk.Frame(steps, bg=SURFACE, pady=1)
             row.pack(fill="x")
             icon = self._label(row, "○", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10))
             icon.pack(side="left", padx=(0, 12))
@@ -241,20 +318,18 @@ class HappyBeanApp(tk.Tk):
             self.step_states[key] = state
             self._label(row, state, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(side="right")
 
-        self._label(outer, "활동 기록", font=("맑은 고딕", 12, "bold")).pack(anchor="w", pady=(20, 8))
-        log_box = tk.Frame(outer, bg=SURFACE, padx=12, pady=8)
-        log_box.pack(fill="both", expand=True)
-        self.log = tk.Text(log_box, height=3, state="disabled", wrap="word", bg=SURFACE, fg=TEXT,
-                           insertbackground=TEXT, relief="flat", font=("맑은 고딕", 9), padx=4, pady=4)
-        scroll = ttk.Scrollbar(log_box, command=self.log.yview)
-        self.log.configure(yscrollcommand=scroll.set)
+        self._label(right, "활동 기록", font=("맑은 고딕", 12, "bold")).pack(anchor="w", pady=(7, 11))
+        log_panel = RoundedPanel(right, padx=2, pady=0)
+        log_panel.pack(fill="both", expand=True)
+        log_box = log_panel.body
+        self.log = tk.Text(log_box, height=5, state="disabled", wrap="word", bg=SURFACE, fg=TEXT,
+                           insertbackground=TEXT, relief="flat", highlightthickness=0, font=("맑은 고딕", 9), padx=4, pady=4)
         self.log.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
         footer = tk.Frame(outer, bg=BG)
-        footer.pack(fill="x", pady=(10, 0))
+        footer.pack(fill="x", pady=(3, 0))
         self._label(footer, "수집 중에는 브라우저를 직접 조작하지 마세요.", fg=MUTED, font=("맑은 고딕", 9)).pack(side="left")
-        self.reset_button = tk.Button(footer, text="로그인 초기화", command=self._reset_login, bg=BG, fg=MUTED,
-                                      activebackground=BG, relief="flat", font=("맑은 고딕", 9, "underline"), cursor="hand2")
+        self.reset_button = RoundedButton(footer, text="로그인 초기화", command=self._reset_login,
+                                          fill=BG, foreground=MUTED, hover=BORDER, height=28)
         self.reset_button.pack(side="right")
 
     def _edit_cafe(self) -> None:
@@ -275,6 +350,12 @@ class HappyBeanApp(tk.Tk):
         for label, variable in (("카페 숫자 ID", id_var), ("카페 주소", url_var)):
             self._label(dialog, label, bg=SURFACE, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(4, 3))
             tk.Entry(dialog, textvariable=variable, width=45, font=("맑은 고딕", 10), relief="solid", bd=1).pack(fill="x", ipady=5, pady=(0, 8))
+        def fill_cafe() -> None:
+            id_var.set("31172912")
+            url_var.set("https://cafe.naver.com/dpbokji1")
+        self.preset_button = RoundedButton(dialog, text="dpbokji1 카페 자동완성", command=fill_cafe,
+                                           fill=GREEN_SOFT, hover="#d7e5fa", min_width=180)
+        self.preset_button.pack(anchor="w", pady=(0, 8))
         self._label(dialog, "같은 카페의 ID와 주소를 입력하세요. 둘 다 비우면 건너뜁니다.", bg=SURFACE, fg=MUTED,
                     font=("맑은 고딕", 9)).pack(anchor="w", pady=(0, 12))
         def save() -> None:
@@ -290,10 +371,10 @@ class HappyBeanApp(tk.Tk):
             dialog.destroy()
         buttons = tk.Frame(dialog, bg=SURFACE)
         buttons.pack(fill="x")
-        tk.Button(buttons, text="저장", command=save, bg=GREEN, fg=SURFACE, relief="flat", padx=18, pady=6,
-                  font=("맑은 고딕", 9, "bold")).pack(side="right")
-        tk.Button(buttons, text="취소", command=dialog.destroy, bg=SURFACE, fg=TEXT, relief="flat", padx=12, pady=6,
-                  font=("맑은 고딕", 9)).pack(side="right", padx=(0, 6))
+        RoundedButton(buttons, text="저장", command=save, fill=GREEN, foreground=SURFACE,
+                      hover=GREEN_DARK).pack(side="right")
+        RoundedButton(buttons, text="취소", command=dialog.destroy, fill=BG, foreground=TEXT,
+                      hover=BORDER).pack(side="right", padx=(0, 6))
         dialog.grab_set()
         dialog.wait_window()
 

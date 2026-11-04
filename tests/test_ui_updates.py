@@ -18,8 +18,13 @@ class UpdateUiTests(unittest.TestCase):
             self.app = ui.HappyBeanApp()
         except tk.TclError:
             self.skipTest('no graphical display')
-        self.addCleanup(self.app.destroy)
+        self.addCleanup(self.cleanup_app)
         self.app.update()
+
+    def cleanup_app(self):
+        for callback in self.app.tk.splitlist(self.app.tk.call('after', 'info')):
+            self.app.after_cancel(callback)
+        self.app.destroy()
 
     def wait_for(self, state):
         end = time.monotonic() + 3
@@ -42,6 +47,39 @@ class UpdateUiTests(unittest.TestCase):
                 self.assertEqual(self.app.run_button['state'], 'normal')
                 self.wait_for(state)
                 self.assertIn(text, self.app.update_status.get())
+
+    def test_cafe_preset_fills_fields_only_until_saved(self):
+        from modules import user_manager
+        with tempfile.TemporaryDirectory() as directory, patch.object(user_manager, 'USER_DATA_ROOT', directory):
+            self.app.username = 'test-preset'
+            problems = []
+            def interact():
+                try:
+                    dialog = next(w for w in self.app.winfo_children() if isinstance(w, tk.Toplevel))
+                    entries = [w for w in dialog.winfo_children() if isinstance(w, tk.Entry)]
+                    self.app.preset_button.invoke()
+                    self.assertEqual([entry.get() for entry in entries], ['31172912', 'https://cafe.naver.com/dpbokji1'])
+                    self.assertIsNone(user_manager.load_config('test-preset'))
+                    buttons = next(w for w in dialog.winfo_children() if isinstance(w, tk.Frame))
+                    next(w for w in buttons.winfo_children() if isinstance(w, ui.RoundedButton) and w._text == '저장').invoke()
+                except Exception as exc:
+                    problems.append(exc)
+                    dialog.destroy()
+            self.app.after(50, interact)
+            self.app._edit_cafe()
+            if problems:
+                raise problems[0]
+            self.assertEqual(user_manager.load_config('test-preset')['cafe']['id'], 31172912)
+
+    def test_main_controls_fit_in_window(self):
+        self.app.update_idletasks()
+        for widget in (self.app.run_button, self.app.cancel_button, self.app.cafe_button,
+                       self.app.log, self.app.reset_button, self.app.update_button):
+            with self.subTest(widget=widget):
+                self.assertGreater(widget.winfo_width(), 1)
+                self.assertGreater(widget.winfo_height(), 1)
+                self.assertLessEqual(widget.winfo_rooty() + widget.winfo_height(),
+                                     self.app.winfo_rooty() + self.app.winfo_height())
 
     def test_ready_update_waits_for_running_automation(self):
         self.app.update_state = 'ready'
