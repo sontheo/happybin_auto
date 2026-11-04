@@ -4,6 +4,7 @@ from __future__ import annotations
 import getpass
 import ctypes
 import queue
+import shutil
 import sys
 import threading
 import tkinter as tk
@@ -18,16 +19,16 @@ from modules import updater
 
 
 # A restrained, high-contrast palette shared by the main window and settings.
-BG = "#f0f4f2"
-SURFACE = "#fafcfb"
-TEXT = "#172b24"
-MUTED = "#465f53"
-GREEN = "#126c4a"
-GREEN_DARK = "#0b5137"
-GREEN_SOFT = "#e1f0e8"
+BG = "#eff1f5"
+SURFACE = "#ffffff"
+TEXT = "#1d2533"
+MUTED = "#596576"
+GREEN = "#2469ca"
+GREEN_DARK = "#174e9b"
+GREEN_SOFT = "#e5efff"
 AMBER_SOFT = "#f7efdb"
 AMBER_TEXT = "#634c1d"
-BORDER = "#c9d8d0"
+BORDER = "#dde2ea"
 RED = "#a33036"
 
 
@@ -47,6 +48,28 @@ def enable_dpi_awareness() -> None:
             ctypes.windll.user32.SetProcessDPIAware()
         except (AttributeError, OSError):
             pass
+
+
+class RoundedPanel(tk.Canvas):
+    """A solid rounded surface which follows its content and the window width."""
+    def __init__(self, parent, *, padx=0, pady=0):
+        super().__init__(parent, bg=BG, highlightthickness=0, bd=0)
+        self.body = tk.Frame(self, bg=SURFACE, padx=padx, pady=pady)
+        self.shape = self.create_polygon(0, 0, 0, 0, smooth=True, splinesteps=24, fill=SURFACE, outline=SURFACE)
+        self.content = self.create_window(12, 12, anchor="nw", window=self.body)
+        self.body.bind("<Configure>", self._resize)
+        self.bind("<Configure>", self._resize)
+
+    def _resize(self, event=None):
+        width = max(self.winfo_width(), 32)
+        height = self.body.winfo_reqheight() + 24
+        self.itemconfigure(self.content, width=max(width - 24, 1))
+        if self.winfo_reqheight() != height:
+            self.configure(height=height)
+        r = 16
+        self.coords(self.shape, 0, r, 0, 0, r, 0, width-r, 0, width, 0, width, r,
+                    width, height-r, width, height, width-r, height, r, height,
+                    0, height, 0, height-r)
 
 
 class _QueueStream:
@@ -87,7 +110,12 @@ class HappyBeanApp(tk.Tk):
         self.configure(bg=BG)
         self.events: queue.Queue = queue.Queue()
         self.cancel_event = threading.Event()
+        self.closed_event = threading.Event()
         self.worker: threading.Thread | None = None
+        self.update_release = None
+        self.update_stage = None
+        self.update_state = "idle"
+        self.update_status = tk.StringVar(value="업데이트 확인")
         self.username = getpass.getuser()
         self.status = tk.StringVar(value="준비됨 — 실행하면 로그인 상태를 확인합니다.")
         self.bean_detail = tk.StringVar(value="아직 확인된 콩 획득 내역이 없습니다")
@@ -99,13 +127,15 @@ class HappyBeanApp(tk.Tk):
         self.after(100, self._drain_events)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         if sys.platform == "win32" and getattr(sys, "frozen", False):
-            threading.Thread(target=self._check_update, daemon=True).start()
+            self._begin_update_check()
+        else:
+            self.update_status.set("Windows 배포본에서 업데이트 확인")
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
         style.theme_use("clam")
-        style.configure("HB.Horizontal.TProgressbar", troughcolor="#cbe9d6", background=GREEN,
-                        bordercolor="#cbe9d6", lightcolor=GREEN, darkcolor=GREEN, thickness=7)
+        style.configure("HB.Horizontal.TProgressbar", troughcolor="#e4e8ef", background=GREEN,
+                        bordercolor="#e4e8ef", lightcolor=GREEN, darkcolor=GREEN, thickness=6)
 
     @staticmethod
     def _label(parent, text: str | tk.StringVar, **kwargs) -> tk.Label:
@@ -142,89 +172,87 @@ class HappyBeanApp(tk.Tk):
         self.bind_all("<Button-5>", scroll_page)
 
         header = tk.Frame(outer, bg=BG)
-        header.pack(fill="x", pady=(0, 16))
-        icon_scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
-        mark = tk.Canvas(header, width=int(42 * icon_scale), height=int(42 * icon_scale), bg=BG, highlightthickness=0)
-        mark.pack(side="left", padx=(0, 12))
-        mark.create_oval(2, 2, 40, 40, fill=GREEN, outline=GREEN)
-        mark.create_oval(12, 12, 21, 29, fill=SURFACE, outline=SURFACE)
-        mark.create_oval(21, 12, 30, 29, fill=SURFACE, outline=SURFACE)
-        mark.scale("all", 0, 0, icon_scale, icon_scale)
+        header.pack(fill="x", pady=(4, 18))
         brand = tk.Frame(header, bg=BG)
         brand.pack(side="left")
-        self._label(brand, "콩콩줍줍", font=("맑은 고딕", 18, "bold")).pack(anchor="w")
-        self._label(brand, "해피빈 자동 수집", fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
-        live = tk.Frame(header, bg=BG)
-        live.pack(side="right")
-        self.live_dot = self._label(live, "●", fg=MUTED, font=("맑은 고딕", 10))
-        self.live_dot.pack(side="left")
-        self.live_text = self._label(live, "준비", fg=MUTED, font=("맑은 고딕", 9, "bold"))
-        self.live_text.pack(side="left", padx=(5, 0))
+        self._label(brand, "콩콩줍줍", font=("맑은 고딕", 23, "bold")).pack(anchor="w")
+        self._label(brand, "나의 해피빈 수집", fg=MUTED, font=("맑은 고딕", 10)).pack(anchor="w", pady=(1, 0))
+        self.update_button = tk.Button(header, textvariable=self.update_status, command=self._update_action,
+                                       bg=BG, fg=GREEN_DARK, activebackground=GREEN_SOFT,
+                                       activeforeground=GREEN_DARK, relief="flat", padx=10, pady=9,
+                                       font=("맑은 고딕", 9, "bold"), cursor="hand2", takefocus=True)
+        self.update_button.pack(side="right")
 
-        self.stage = tk.Frame(outer, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=17, pady=14)
+        # A single primary surface keeps the current task, result and action together.
+        hero_panel = RoundedPanel(outer, padx=10, pady=8)
+        hero_panel.pack(fill="x")
+        hero = hero_panel.body
+        top = tk.Frame(hero, bg=SURFACE)
+        top.pack(fill="x")
+        self._label(top, "오늘의 수집", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10, "bold")).pack(side="left")
+        live = tk.Frame(top, bg=SURFACE)
+        live.pack(side="right")
+        self.live_dot = self._label(live, "●", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9))
+        self.live_dot.pack(side="left")
+        self.live_text = self._label(live, "준비", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9, "bold"))
+        self.live_text.pack(side="left", padx=(5, 0))
+        self._label(hero, self.bean_total, bg=SURFACE, fg=TEXT, font=("맑은 고딕", 29, "bold")).pack(anchor="w", pady=(8, 0))
+        self._label(hero, self.bean_detail, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
+        tk.Frame(hero, bg=BG, height=1).pack(fill="x", pady=(17, 14))
+        self.stage = tk.Frame(hero, bg=SURFACE)
         self.stage.pack(fill="x")
-        self._label(self.stage, "현재 작업", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9, "bold")).pack(anchor="w")
-        self.stage_title = self._label(self.stage, "실행할 준비가 되었습니다", bg=SURFACE, font=("맑은 고딕", 14, "bold"))
-        self.stage_title.pack(anchor="w", pady=(5, 2))
+        self.stage_title = self._label(self.stage, "실행할 준비가 되었습니다", bg=SURFACE, font=("맑은 고딕", 12, "bold"))
+        self.stage_title.pack(anchor="w")
         self.stage_detail = self._label(self.stage, self.status, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9), anchor="w")
-        self.stage_detail.pack(fill="x")
+        self.stage_detail.pack(fill="x", pady=(3, 0))
         self.progress = ttk.Progressbar(self.stage, style="HB.Horizontal.TProgressbar", mode="determinate", maximum=100, value=0)
         self.progress.pack(fill="x", pady=(12, 0))
-
-        actions = tk.Frame(outer, bg=BG)
-        actions.pack(fill="x", pady=(12, 16))
+        actions = tk.Frame(hero, bg=SURFACE)
+        actions.pack(fill="x", pady=(16, 0))
         self.run_button = tk.Button(actions, text="자동 수집 시작", command=self._start, bg=GREEN, fg=SURFACE,
-                                    activebackground=GREEN_DARK, activeforeground=SURFACE, relief="flat",
-                                    font=("맑은 고딕", 10, "bold"), pady=9, cursor="hand2")
-        self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        self.cancel_button = tk.Button(actions, text="중지", command=self._cancel, state="disabled", bg=SURFACE,
-                                       fg=RED, activebackground=AMBER_SOFT, relief="flat", padx=20, pady=9,
-                                       font=("맑은 고딕", 10, "bold"), cursor="hand2")
+                                    activebackground=GREEN_DARK, activeforeground=SURFACE, relief="flat", bd=0,
+                                    font=("맑은 고딕", 10, "bold"), pady=10, cursor="hand2", takefocus=True)
+        self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.cancel_button = tk.Button(actions, text="중지", command=self._cancel, state="disabled", bg=BG,
+                                       fg=RED, activebackground="#f8e8e9", relief="flat", bd=0, padx=20, pady=10,
+                                       font=("맑은 고딕", 10, "bold"), cursor="hand2", takefocus=True)
         self.cancel_button.pack(side="right")
 
-        summary = tk.Frame(outer, bg=BG)
-        summary.pack(fill="x", pady=(0, 12))
-        bean = tk.Frame(summary, bg=BG)
-        bean.pack(side="left", fill="x", expand=True)
-        self._label(bean, "이번 실행에서 확인한 콩", fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
-        row = tk.Frame(bean, bg=BG)
-        row.pack(fill="x", pady=(2, 0))
-        self._label(row, self.bean_total, fg=GREEN_DARK, font=("맑은 고딕", 16, "bold")).pack(side="left")
-        self._label(row, self.bean_detail, fg=MUTED, font=("맑은 고딕", 9)).pack(side="left", padx=(10, 0))
-        self.cafe_button = tk.Button(summary, text="카페 설정", command=self._edit_cafe, bg=BG, fg=GREEN_DARK,
-                                     activebackground=GREEN_SOFT, relief="flat", padx=8, pady=8,
-                                     font=("맑은 고딕", 9, "bold"), cursor="hand2")
+        title_row = tk.Frame(outer, bg=BG)
+        title_row.pack(fill="x", pady=(22, 8))
+        self._label(title_row, "수집 과정", font=("맑은 고딕", 12, "bold")).pack(side="left")
+        self.cafe_button = tk.Button(title_row, text="카페 설정  ›", command=self._edit_cafe, bg=BG, fg=GREEN_DARK,
+                                     activebackground=GREEN_SOFT, relief="flat", bd=0, padx=8, pady=4,
+                                     font=("맑은 고딕", 9, "bold"), cursor="hand2", takefocus=True)
         self.cafe_button.pack(side="right")
-
-        self._label(outer, "진행 단계", fg=MUTED, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(0, 5))
-        steps = tk.Frame(outer, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
-        steps.pack(fill="x")
+        steps_panel = RoundedPanel(outer, padx=5, pady=0)
+        steps_panel.pack(fill="x")
+        steps = steps_panel.body
         for index, key in enumerate(self.STEP_ORDER):
             if index:
                 tk.Frame(steps, bg=BG, height=1).pack(fill="x")
-            row = tk.Frame(steps, bg=SURFACE, padx=14, pady=3)
+            row = tk.Frame(steps, bg=SURFACE, pady=5)
             row.pack(fill="x")
             icon = self._label(row, "○", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10))
-            icon.pack(side="left", padx=(0, 10))
+            icon.pack(side="left", padx=(0, 12))
             self.step_icons[key] = icon
             self._label(row, self.STEP_TITLES[key], bg=SURFACE, font=("맑은 고딕", 9)).pack(side="left")
             state = tk.StringVar(value="대기")
             self.step_states[key] = state
             self._label(row, state, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(side="right")
 
-        self._label(outer, "진행 로그", fg=MUTED, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(12, 5))
-        log_box = tk.Frame(outer, bg="#20372d", padx=2, pady=2)
+        self._label(outer, "활동 기록", font=("맑은 고딕", 12, "bold")).pack(anchor="w", pady=(20, 8))
+        log_box = tk.Frame(outer, bg=SURFACE, padx=12, pady=8)
         log_box.pack(fill="both", expand=True)
-        self.log = tk.Text(log_box, height=3, state="disabled", wrap="word", bg="#20372d", fg="#e5f2eb",
-                           insertbackground=SURFACE, relief="flat", font=("맑은 고딕", 9), padx=10, pady=8)
+        self.log = tk.Text(log_box, height=3, state="disabled", wrap="word", bg=SURFACE, fg=TEXT,
+                           insertbackground=TEXT, relief="flat", font=("맑은 고딕", 9), padx=4, pady=4)
         scroll = ttk.Scrollbar(log_box, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-
         footer = tk.Frame(outer, bg=BG)
-        footer.pack(fill="x", pady=(8, 0))
-        self._label(footer, "작업 중에는 브라우저를 직접 조작하지 마세요.", fg=MUTED, font=("맑은 고딕", 9)).pack(side="left")
+        footer.pack(fill="x", pady=(10, 0))
+        self._label(footer, "수집 중에는 브라우저를 직접 조작하지 마세요.", fg=MUTED, font=("맑은 고딕", 9)).pack(side="left")
         self.reset_button = tk.Button(footer, text="로그인 초기화", command=self._reset_login, bg=BG, fg=MUTED,
                                       activebackground=BG, relief="flat", font=("맑은 고딕", 9, "underline"), cursor="hand2")
         self.reset_button.pack(side="right")
@@ -269,30 +297,51 @@ class HappyBeanApp(tk.Tk):
         dialog.grab_set()
         dialog.wait_window()
 
-    def _check_update(self) -> None:
-        try:
-            release = updater.check_update()
-            if release:
-                self.events.put(("update", release))
-        except Exception:
-            pass  # An unavailable release service must not block startup.
-
-    def _offer_update(self, release: dict) -> None:
-        if self.worker and self.worker.is_alive():
-            self.after(2000, lambda: self._offer_update(release))
+    def _begin_update_check(self) -> None:
+        if self.update_state in ("checking", "downloading"):
             return
-        if not messagebox.askyesno("업데이트", f"새 버전 {release['version']}이 있습니다. 지금 업데이트할까요?\n\n다운로드 후 프로그램을 다시 시작합니다.", parent=self):
-            return
-        self.run_button.configure(state="disabled")
-        self.reset_button.configure(state="disabled")
-        self.cafe_button.configure(state="disabled")
-        self.status.set("업데이트를 다운로드하고 검증하는 중입니다.")
-        def download() -> None:
+        self.update_state = "checking"
+        self.update_status.set("업데이트 확인 중…")
+        def check() -> None:
             try:
-                self.events.put(("update_ready", updater.stage_update(release)))
-            except Exception as exc:
-                self.events.put(("update_error", str(exc)))
-        threading.Thread(target=download, daemon=True).start()
+                self.events.put(("update_checked", updater.check_update()))
+            except updater.UpdateUnavailable:
+                self.events.put(("update_unavailable",))
+            except Exception:
+                self.events.put(("update_check_error",))
+        threading.Thread(target=check, daemon=True).start()
+
+    def _update_action(self) -> None:
+        if sys.platform != "win32" or not getattr(sys, "frozen", False):
+            self.update_status.set("Windows 배포본에서 업데이트 확인")
+        elif self.update_state == "available":
+            self.update_state = "downloading"
+            self.update_status.set("업데이트 다운로드 중…")
+            release = self.update_release
+            def download() -> None:
+                try:
+                    stage = updater.stage_update(release)
+                    if self.closed_event.is_set():
+                        shutil.rmtree(stage, ignore_errors=True)
+                    else:
+                        self.events.put(("update_ready", stage))
+                except Exception:
+                    self.events.put(("update_download_error",))
+            threading.Thread(target=download, daemon=True).start()
+        elif self.update_state == "ready":
+            if self.worker and self.worker.is_alive():
+                self.update_status.set("수집 종료 후 설치할 수 있어요")
+                return
+            if not messagebox.askyesno("업데이트 설치", "업데이트를 설치하고 앱을 다시 시작할까요?", parent=self):
+                return
+            try:
+                updater.launch_installer(self.update_stage)
+                self.update_stage = None
+                self.destroy()
+            except Exception:
+                self.update_status.set("설치 실패 · 다시 시도")
+        elif self.update_state not in ("checking", "downloading"):
+            self._begin_update_check()
 
     def _start(self) -> None:
         self.cancel_event.clear()
@@ -300,7 +349,7 @@ class HappyBeanApp(tk.Tk):
         self.reset_button.configure(state="disabled")
         self.cafe_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
-        self.live_dot.configure(fg="#16b364")
+        self.live_dot.configure(fg=GREEN)
         self.live_text.configure(text="실행 중", fg=GREEN_DARK)
         self.progress.configure(value=3)
         self.bean_detail.set("작업 결과를 확인하는 중입니다")
@@ -373,21 +422,23 @@ class HappyBeanApp(tk.Tk):
                     self._append_log(event[1])
                 elif event[0] == "progress":
                     self._show_progress(event[1], event[2])
-                elif event[0] == "update":
-                    self._offer_update(event[1])
+                elif event[0] == "update_checked":
+                    self.update_release = event[1]
+                    self.update_state = "available" if event[1] else "current"
+                    self.update_status.set(f"업데이트 가능 · {event[1]['version']} ↓" if event[1] else "최신 버전입니다  ↻")
+                elif event[0] == "update_unavailable":
+                    self.update_state = "unavailable"
+                    self.update_status.set("새 버전 준비 중  ↻")
+                elif event[0] == "update_check_error":
+                    self.update_state = "error"
+                    self.update_status.set("확인 실패 · 다시 시도  ↻")
                 elif event[0] == "update_ready":
-                    try:
-                        updater.launch_installer(event[1])
-                        self.destroy()
-                        return
-                    except Exception as exc:
-                        self.events.put(("update_error", str(exc)))
-                elif event[0] == "update_error":
-                    self.run_button.configure(state="normal")
-                    self.reset_button.configure(state="normal")
-                    self.cafe_button.configure(state="normal")
-                    self.status.set("업데이트에 실패했습니다. 기존 버전을 계속 사용할 수 있습니다.")
-                    messagebox.showerror("업데이트 실패", event[1], parent=self)
+                    self.update_stage = event[1]
+                    self.update_state = "ready"
+                    self.update_status.set("설치하고 다시 시작  ↗")
+                elif event[0] == "update_download_error":
+                    self.update_state = "available"
+                    self.update_status.set("다운로드 실패 · 다시 시도  ↻")
                 elif event[0] == "finished":
                     self._finish(event[1])
         except queue.Empty:
@@ -456,6 +507,9 @@ class HappyBeanApp(tk.Tk):
             if not messagebox.askyesno("실행 중", "실행을 중지하고 창을 닫을까요?"):
                 return
             self.cancel_event.set()
+        self.closed_event.set()
+        if self.update_stage is not None:
+            shutil.rmtree(self.update_stage, ignore_errors=True)
         self.destroy()
 
 

@@ -24,7 +24,7 @@ You need **Windows x64 and an interactive desktop**. The release ZIP includes th
 
 ## Automatic updates
 
-The Windows distribution checks for a newer stable release at startup. With your consent it downloads the ZIP, verifies its SHA-256 digest, replaces the application, and restarts. Declining or being offline leaves the existing version usable. Extract the application to a writable location. Versions 4.1.0 and earlier do not have this feature and must first be updated manually.
+The Windows distribution checks for a newer stable release in the background and displays the result in the button at the top. Select an available update to download it, then choose whether to install and restart. Installation waits until collection has stopped. The ZIP is checked against its SHA-256 digest, and the existing version remains usable while offline. Extract the application to a writable location. Versions 4.1.0 and earlier do not have this feature and must first be updated manually.
 
 Publish a stable release with a three-part tag such as `4.2.0` or `v4.2.0`; GitHub Actions builds and attaches the ZIP. The update becomes available after the build finishes.
 

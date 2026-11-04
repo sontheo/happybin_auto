@@ -27,6 +27,10 @@ def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(map(int, value.lstrip("v").split(".")))
 
 
+class UpdateUnavailable(Exception):
+    """A newer release exists but its verified Windows package is not ready."""
+
+
 def check_update() -> dict | None:
     request = urllib.request.Request(API, headers={"Accept": "application/vnd.github+json", "User-Agent": "HappybinAuto-Updater"})
     with urllib.request.urlopen(request, timeout=10) as response:
@@ -40,7 +44,7 @@ def check_update() -> dict | None:
         expected_url = f"https://github.com/sontheo/happybin_auto/releases/download/{tag}/{ASSET}"
         if asset.get("name") == ASSET and url == expected_url and re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
             return {"version": tag, "url": url, "digest": digest[7:]}
-    return None
+    raise UpdateUnavailable("새 버전의 Windows 배포 파일이 아직 준비되지 않았습니다.")
 
 
 def stage_update(release: dict) -> Path:

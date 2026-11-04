@@ -35,7 +35,8 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(updater.check_update()['version'], tag)
         asset['browser_download_url'] = 'https://example.org/file.zip'
         with patch.object(updater, 'VERSION', '4.1.0'), patch('urllib.request.urlopen', return_value=Response(json.dumps(release).encode())):
-            self.assertIsNone(updater.check_update())
+            with self.assertRaises(updater.UpdateUnavailable):
+                updater.check_update()
 
     def test_stage_validates_digest_and_paths(self):
         payload = archive({'HappybinAuto/HappybinAuto.exe': b'exe', 'HappybinAuto/_internal/a': b'data'})
