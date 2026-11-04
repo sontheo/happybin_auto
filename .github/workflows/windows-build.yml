@@ -39,6 +39,7 @@ jobs:
       - name: Run non-interactive tests
         env:
           HAPPYBIN_HEADLESS_TESTS: '1'
+          PYTHONUTF8: '1'
         shell: pwsh
         run: |
           python -m unittest discover -s tests -v
