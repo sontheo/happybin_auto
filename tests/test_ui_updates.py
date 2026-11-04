@@ -1,4 +1,5 @@
 """UI state checks; skipped when Tk or a display is unavailable."""
+import os
 import tempfile
 import time
 import unittest
@@ -11,7 +12,8 @@ except (ImportError, ModuleNotFoundError):
     tk = ui = None
 
 
-@unittest.skipIf(ui is None, 'Tk or application dependencies unavailable')
+@unittest.skipIf(ui is None or os.environ.get('HAPPYBIN_HEADLESS_TESTS') == '1',
+                 'Tk or an interactive display is unavailable')
 class UpdateUiTests(unittest.TestCase):
     def setUp(self):
         try:
