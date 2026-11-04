@@ -41,6 +41,9 @@ Check sign-in → attempt blog publication → attempt cafe publication if confi
 
 ## Cafe configuration
 
+Use **카페 설정** in the app to save or change the destination for the current user. Leave both fields empty to skip cafe operations. A saved setting takes precedence over the environment variables below; verify that the numeric ID and URL refer to the same cafe.
+
+
 Cafe operations are disabled by default. Set the numeric ID and URL of an authorized cafe in the same PowerShell session before launching the program. These values are examples:
 
 ```powershell

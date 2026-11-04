@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import getpass
+import ctypes
 import queue
 import sys
 import threading
@@ -11,21 +12,41 @@ from tkinter import messagebox, ttk
 
 from automation import run_automation
 from modules.session_manager import clear_session
-from modules.user_manager import clear_browser_data
+from modules.user_manager import clear_browser_data, get_or_create_config, save_config
+import config
 from modules import updater
 
 
-BG = "#f5f8f6"
-SURFACE = "#ffffff"
-TEXT = "#17201b"
-MUTED = "#748078"
-GREEN = "#08a557"
-GREEN_DARK = "#08743d"
-GREEN_SOFT = "#eaf8f0"
-AMBER_SOFT = "#fff6e4"
-AMBER_TEXT = "#805c13"
-BORDER = "#dce7e0"
-RED = "#b83b31"
+# A restrained, high-contrast palette shared by the main window and settings.
+BG = "#f0f4f2"
+SURFACE = "#fafcfb"
+TEXT = "#172b24"
+MUTED = "#465f53"
+GREEN = "#126c4a"
+GREEN_DARK = "#0b5137"
+GREEN_SOFT = "#e1f0e8"
+AMBER_SOFT = "#f7efdb"
+AMBER_TEXT = "#634c1d"
+BORDER = "#c9d8d0"
+RED = "#a33036"
+
+
+def enable_dpi_awareness() -> None:
+    """Opt in before creating any Tk window so Windows does not bitmap-scale it."""
+    if sys.platform != "win32":
+        return
+    try:
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except (AttributeError, OSError):
+        pass
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
 
 
 class _QueueStream:
@@ -56,13 +77,13 @@ class HappyBeanApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("콩콩줍줍")
-        # The side-by-side cards need this width; keeping it fixed prevents
-        # Windows DPI/resolution changes from squeezing the status text.
-        width = min(560, max(553, int(self.winfo_screenwidth() * 0.40)))
-        height = min(760, max(680, self.winfo_screenheight() - 80))
+        # Tk uses point-sized fonts; size the window for the active display DPI.
+        scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        width = min(int(620 * scale), self.winfo_screenwidth() - 32)
+        height = min(int(750 * scale), self.winfo_screenheight() - 64)
         self.geometry(f"{width}x{height}+24+24")
-        self.minsize(553, 680)
-        self.resizable(False, False)
+        self.minsize(min(width, int(520 * scale)), min(height, int(580 * scale)))
+        self.resizable(True, True)
         self.configure(bg=BG)
         self.events: queue.Queue = queue.Queue()
         self.cancel_event = threading.Event()
@@ -95,118 +116,158 @@ class HappyBeanApp(tk.Tk):
         return tk.Label(parent, text=text, **defaults)
 
     def _build(self) -> None:
-        outer = tk.Frame(self, bg=BG)
-        outer.pack(fill="both", expand=True)
+        viewport = tk.Frame(self, bg=BG)
+        viewport.pack(fill="both", expand=True)
+        canvas = tk.Canvas(viewport, bg=BG, highlightthickness=0, borderwidth=0)
+        scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        outer = tk.Frame(canvas, bg=BG, padx=22, pady=18)
+        window = canvas.create_window((0, 0), window=outer, anchor="nw")
+        def resize_content(event=None):
+            canvas.itemconfigure(window, width=canvas.winfo_width(),
+                                 height=max(canvas.winfo_height(), outer.winfo_reqheight()))
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        outer.bind("<Configure>", resize_content)
+        canvas.bind("<Configure>", resize_content)
+        def scroll_page(event):
+            if event.widget.winfo_toplevel() != self or event.widget is self.log:
+                return
+            amount = -1 if getattr(event, "num", 0) == 4 or getattr(event, "delta", 0) > 0 else 1
+            canvas.yview_scroll(amount, "units")
+            return "break"
+        self.bind_all("<MouseWheel>", scroll_page)
+        self.bind_all("<Button-4>", scroll_page)
+        self.bind_all("<Button-5>", scroll_page)
 
-        header = tk.Frame(outer, bg=SURFACE, padx=20, pady=10)
-        header.pack(fill="x")
-        mark = tk.Label(header, text="✦", bg=GREEN, fg="white", font=("맑은 고딕", 18, "bold"),
-                        width=2, height=1)
-        mark.pack(side="left")
-        brand = tk.Frame(header, bg=SURFACE)
-        brand.pack(side="left", padx=12)
-        self._label(brand, "콩콩줍줍", bg=SURFACE, font=("맑은 고딕", 18, "bold")).pack(anchor="w")
-        self._label(brand, f"해피빈 자동 수집기 · {self.username} · 로그인 유지됨", bg=SURFACE,
-                    fg=MUTED, font=("맑은 고딕", 8)).pack(anchor="w", pady=(2, 0))
-        live = tk.Frame(header, bg=SURFACE)
+        header = tk.Frame(outer, bg=BG)
+        header.pack(fill="x", pady=(0, 16))
+        icon_scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        mark = tk.Canvas(header, width=int(42 * icon_scale), height=int(42 * icon_scale), bg=BG, highlightthickness=0)
+        mark.pack(side="left", padx=(0, 12))
+        mark.create_oval(2, 2, 40, 40, fill=GREEN, outline=GREEN)
+        mark.create_oval(12, 12, 21, 29, fill=SURFACE, outline=SURFACE)
+        mark.create_oval(21, 12, 30, 29, fill=SURFACE, outline=SURFACE)
+        mark.scale("all", 0, 0, icon_scale, icon_scale)
+        brand = tk.Frame(header, bg=BG)
+        brand.pack(side="left")
+        self._label(brand, "콩콩줍줍", font=("맑은 고딕", 18, "bold")).pack(anchor="w")
+        self._label(brand, "해피빈 자동 수집", fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
+        live = tk.Frame(header, bg=BG)
         live.pack(side="right")
-        self.live_dot = tk.Label(live, text="●", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10))
+        self.live_dot = self._label(live, "●", fg=MUTED, font=("맑은 고딕", 10))
         self.live_dot.pack(side="left")
-        self.live_text = self._label(live, "준비", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9, "bold"))
-        self.live_text.pack(side="left", padx=(3, 0))
+        self.live_text = self._label(live, "준비", fg=MUTED, font=("맑은 고딕", 9, "bold"))
+        self.live_text.pack(side="left", padx=(5, 0))
 
-        body = tk.Frame(outer, bg=BG, padx=16, pady=8)
-        body.pack(fill="both", expand=True)
+        self.stage = tk.Frame(outer, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=17, pady=14)
+        self.stage.pack(fill="x")
+        self._label(self.stage, "현재 작업", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9, "bold")).pack(anchor="w")
+        self.stage_title = self._label(self.stage, "실행할 준비가 되었습니다", bg=SURFACE, font=("맑은 고딕", 14, "bold"))
+        self.stage_title.pack(anchor="w", pady=(5, 2))
+        self.stage_detail = self._label(self.stage, self.status, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9), anchor="w")
+        self.stage_detail.pack(fill="x")
+        self.progress = ttk.Progressbar(self.stage, style="HB.Horizontal.TProgressbar", mode="determinate", maximum=100, value=0)
+        self.progress.pack(fill="x", pady=(12, 0))
 
-        self._label(body, "현재 작업", fg=MUTED, font=("맑은 고딕", 8, "bold")).pack(anchor="w", padx=4)
-        self.stage = tk.Frame(body, bg=GREEN_SOFT, highlightbackground="#cdecd9", highlightthickness=1,
-                              padx=13, pady=8)
-        self.stage.pack(fill="x", pady=(6, 8))
-        icon = tk.Label(self.stage, text="●", bg=GREEN, fg="white", font=("맑은 고딕", 15), width=2)
-        icon.grid(row=0, column=0, rowspan=2, padx=(0, 11))
-        self.stage_title = self._label(self.stage, "실행을 시작할 준비가 되었습니다", bg=GREEN_SOFT,
-                                       font=("맑은 고딕", 11, "bold"))
-        self.stage_title.grid(row=0, column=1, sticky="w")
-        self.stage_detail = self._label(self.stage, self.status, bg=GREEN_SOFT, fg=GREEN_DARK,
-                                        font=("맑은 고딕", 8))
-        self.stage_detail.grid(row=1, column=1, sticky="w", pady=(3, 0))
-        self.stage.columnconfigure(1, weight=1)
-        self.progress = ttk.Progressbar(self.stage, style="HB.Horizontal.TProgressbar", mode="determinate",
-                                        maximum=100, value=0)
-        self.progress.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        actions = tk.Frame(outer, bg=BG)
+        actions.pack(fill="x", pady=(12, 16))
+        self.run_button = tk.Button(actions, text="자동 수집 시작", command=self._start, bg=GREEN, fg=SURFACE,
+                                    activebackground=GREEN_DARK, activeforeground=SURFACE, relief="flat",
+                                    font=("맑은 고딕", 10, "bold"), pady=9, cursor="hand2")
+        self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.cancel_button = tk.Button(actions, text="중지", command=self._cancel, state="disabled", bg=SURFACE,
+                                       fg=RED, activebackground=AMBER_SOFT, relief="flat", padx=20, pady=9,
+                                       font=("맑은 고딕", 10, "bold"), cursor="hand2")
+        self.cancel_button.pack(side="right")
 
-        actions = tk.Frame(body, bg=BG)
-        actions.pack(fill="x")
-        actions.columnconfigure(0, weight=7)
-        actions.columnconfigure(1, weight=3)
-        self.run_button = tk.Button(actions, text="자동 수집 시작", command=self._start, bg=GREEN, fg="white",
-                                    activebackground=GREEN_DARK, activeforeground="white", relief="flat",
-                                    font=("맑은 고딕", 10, "bold"), pady=10, cursor="hand2")
-        self.run_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        self.cancel_button = tk.Button(actions, text="■  중지", command=self._cancel, state="disabled", bg=BG,
-                                       fg=RED, activebackground="#fae9e7", activeforeground=RED,
-                                       highlightbackground="#edc6c1", highlightthickness=1, relief="flat",
-                                       font=("맑은 고딕", 9, "bold"), pady=10, cursor="hand2")
-        self.cancel_button.grid(row=0, column=1, sticky="ew")
+        summary = tk.Frame(outer, bg=BG)
+        summary.pack(fill="x", pady=(0, 12))
+        bean = tk.Frame(summary, bg=BG)
+        bean.pack(side="left", fill="x", expand=True)
+        self._label(bean, "이번 실행에서 확인한 콩", fg=MUTED, font=("맑은 고딕", 9)).pack(anchor="w")
+        row = tk.Frame(bean, bg=BG)
+        row.pack(fill="x", pady=(2, 0))
+        self._label(row, self.bean_total, fg=GREEN_DARK, font=("맑은 고딕", 16, "bold")).pack(side="left")
+        self._label(row, self.bean_detail, fg=MUTED, font=("맑은 고딕", 9)).pack(side="left", padx=(10, 0))
+        self.cafe_button = tk.Button(summary, text="카페 설정", command=self._edit_cafe, bg=BG, fg=GREEN_DARK,
+                                     activebackground=GREEN_SOFT, relief="flat", padx=8, pady=8,
+                                     font=("맑은 고딕", 9, "bold"), cursor="hand2")
+        self.cafe_button.pack(side="right")
 
-        info_row = tk.Frame(body, bg=BG)
-        info_row.pack(fill="x", pady=(8, 8))
-        info_row.columnconfigure(0, weight=1)
-        info_row.columnconfigure(1, weight=1)
-
-        bean = tk.Frame(info_row, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=11, pady=7)
-        bean.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-        tk.Label(bean, text="♥", bg="#fff4dc", fg="#d7890b", font=("맑은 고딕", 13, "bold"), width=2).pack(anchor="w")
-        self._label(bean, "이번 실행 콩 획득", bg=SURFACE, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(6, 0))
-        self._label(bean, self.bean_total, bg=SURFACE, fg=GREEN_DARK, font=("맑은 고딕", 16, "bold")).pack(anchor="w", pady=(1, 0))
-        self._label(bean, self.bean_detail, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 7), wraplength=175,
-                    justify="left").pack(anchor="w", pady=(2, 0))
-
-        notice = tk.Frame(info_row, bg=AMBER_SOFT, highlightbackground="#f0dba5", highlightthickness=1,
-                          padx=11, pady=7)
-        notice.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-        self._label(notice, "!", bg=AMBER_SOFT, fg=AMBER_TEXT, font=("맑은 고딕", 13, "bold")).pack(anchor="w")
-        copy = tk.Frame(notice, bg=AMBER_SOFT)
-        copy.pack(fill="both", expand=True, pady=(5, 0))
-        self._label(copy, "작업 중에는 브라우저를 건드리지 마세요", bg=AMBER_SOFT, fg=AMBER_TEXT,
-                    font=("맑은 고딕", 9, "bold")).pack(anchor="w")
-        self._label(copy, "탭·로그인 창·콩배너를 직접 클릭하거나 닫지 마세요.", bg=AMBER_SOFT,
-                    fg=AMBER_TEXT, font=("맑은 고딕", 7), justify="left", wraplength=175).pack(anchor="w", pady=(3, 0))
-
-        self._label(body, "진행 단계", fg=MUTED, font=("맑은 고딕", 8, "bold")).pack(anchor="w", padx=4, pady=(8, 5))
-        steps = tk.Frame(body, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
+        self._label(outer, "진행 단계", fg=MUTED, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(0, 5))
+        steps = tk.Frame(outer, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
         steps.pack(fill="x")
         for index, key in enumerate(self.STEP_ORDER):
             if index:
-                tk.Frame(steps, bg="#edf1ee", height=1).pack(fill="x")
-            row = tk.Frame(steps, bg=SURFACE, padx=13, pady=4)
+                tk.Frame(steps, bg=BG, height=1).pack(fill="x")
+            row = tk.Frame(steps, bg=SURFACE, padx=14, pady=3)
             row.pack(fill="x")
-            icon = self._label(row, "○", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 11))
+            icon = self._label(row, "○", bg=SURFACE, fg=MUTED, font=("맑은 고딕", 10))
             icon.pack(side="left", padx=(0, 10))
             self.step_icons[key] = icon
-            self._label(row, self.STEP_TITLES[key], bg=SURFACE, font=("맑은 고딕", 9, "bold")).pack(side="left")
+            self._label(row, self.STEP_TITLES[key], bg=SURFACE, font=("맑은 고딕", 9)).pack(side="left")
             state = tk.StringVar(value="대기")
             self.step_states[key] = state
-            self._label(row, state, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 8)).pack(side="right")
+            self._label(row, state, bg=SURFACE, fg=MUTED, font=("맑은 고딕", 9)).pack(side="right")
 
-        self._label(body, "진행 로그", fg=MUTED, font=("맑은 고딕", 8, "bold")).pack(anchor="w", padx=4, pady=(8, 4))
-        log_box = tk.Frame(body, bg="#1d2822", padx=2, pady=2)
+        self._label(outer, "진행 로그", fg=MUTED, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(12, 5))
+        log_box = tk.Frame(outer, bg="#20372d", padx=2, pady=2)
         log_box.pack(fill="both", expand=True)
-        self.log = tk.Text(log_box, height=3, state="disabled", wrap="word", bg="#1d2822", fg="#d9ebe1",
-                           insertbackground="white", relief="flat", font=("Consolas", 8), padx=10, pady=8)
+        self.log = tk.Text(log_box, height=3, state="disabled", wrap="word", bg="#20372d", fg="#e5f2eb",
+                           insertbackground=SURFACE, relief="flat", font=("맑은 고딕", 9), padx=10, pady=8)
         scroll = ttk.Scrollbar(log_box, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-        footer = tk.Frame(body, bg=BG)
-        footer.pack(fill="x", pady=(5, 0))
-        self._label(footer, "로그인 정보는 이 PC에만 안전하게 저장됩니다", fg=MUTED,
-                    font=("맑은 고딕", 8)).pack(side="left")
+        footer = tk.Frame(outer, bg=BG)
+        footer.pack(fill="x", pady=(8, 0))
+        self._label(footer, "작업 중에는 브라우저를 직접 조작하지 마세요.", fg=MUTED, font=("맑은 고딕", 9)).pack(side="left")
         self.reset_button = tk.Button(footer, text="로그인 초기화", command=self._reset_login, bg=BG, fg=MUTED,
-                                      activebackground=BG, activeforeground=TEXT, relief="flat", borderwidth=0,
-                                      font=("맑은 고딕", 8, "underline"), cursor="hand2")
+                                      activebackground=BG, relief="flat", font=("맑은 고딕", 9, "underline"), cursor="hand2")
         self.reset_button.pack(side="right")
+
+    def _edit_cafe(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("카페 설정")
+        dialog.configure(bg=SURFACE, padx=22, pady=20)
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        try:
+            cafe_id, cafe_url = config.cafe_for_user(self.username)
+        except (ValueError, TypeError, AttributeError):
+            cafe_id, cafe_url = 0, ""
+        id_var = tk.StringVar(value=str(cafe_id) if cafe_id else "")
+        url_var = tk.StringVar(value=cafe_url)
+        self._label(dialog, "카페 설정", bg=SURFACE, font=("맑은 고딕", 15, "bold")).pack(anchor="w")
+        self._label(dialog, "글쓰기와 카페 배너 확인에 사용할 카페입니다.", bg=SURFACE, fg=MUTED,
+                    font=("맑은 고딕", 9)).pack(anchor="w", pady=(5, 14))
+        for label, variable in (("카페 숫자 ID", id_var), ("카페 주소", url_var)):
+            self._label(dialog, label, bg=SURFACE, font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(4, 3))
+            tk.Entry(dialog, textvariable=variable, width=45, font=("맑은 고딕", 10), relief="solid", bd=1).pack(fill="x", ipady=5, pady=(0, 8))
+        self._label(dialog, "같은 카페의 ID와 주소를 입력하세요. 둘 다 비우면 건너뜁니다.", bg=SURFACE, fg=MUTED,
+                    font=("맑은 고딕", 9)).pack(anchor="w", pady=(0, 12))
+        def save() -> None:
+            try:
+                cafe_id, cafe_url = config.validate_cafe(id_var.get(), url_var.get())
+                user = get_or_create_config(self.username)
+                user["cafe"] = {"id": cafe_id, "url": cafe_url}
+                save_config(user, self.username)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("카페 설정", str(exc), parent=dialog)
+                return
+            self._append_log("카페 설정을 저장했습니다." if cafe_id else "카페 작업을 사용하지 않습니다.")
+            dialog.destroy()
+        buttons = tk.Frame(dialog, bg=SURFACE)
+        buttons.pack(fill="x")
+        tk.Button(buttons, text="저장", command=save, bg=GREEN, fg=SURFACE, relief="flat", padx=18, pady=6,
+                  font=("맑은 고딕", 9, "bold")).pack(side="right")
+        tk.Button(buttons, text="취소", command=dialog.destroy, bg=SURFACE, fg=TEXT, relief="flat", padx=12, pady=6,
+                  font=("맑은 고딕", 9)).pack(side="right", padx=(0, 6))
+        dialog.grab_set()
+        dialog.wait_window()
 
     def _check_update(self) -> None:
         try:
@@ -224,6 +285,7 @@ class HappyBeanApp(tk.Tk):
             return
         self.run_button.configure(state="disabled")
         self.reset_button.configure(state="disabled")
+        self.cafe_button.configure(state="disabled")
         self.status.set("업데이트를 다운로드하고 검증하는 중입니다.")
         def download() -> None:
             try:
@@ -236,6 +298,7 @@ class HappyBeanApp(tk.Tk):
         self.cancel_event.clear()
         self.run_button.configure(state="disabled", text="자동 수집 진행 중")
         self.reset_button.configure(state="disabled")
+        self.cafe_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
         self.live_dot.configure(fg="#16b364")
         self.live_text.configure(text="실행 중", fg=GREEN_DARK)
@@ -322,6 +385,7 @@ class HappyBeanApp(tk.Tk):
                 elif event[0] == "update_error":
                     self.run_button.configure(state="normal")
                     self.reset_button.configure(state="normal")
+                    self.cafe_button.configure(state="normal")
                     self.status.set("업데이트에 실패했습니다. 기존 버전을 계속 사용할 수 있습니다.")
                     messagebox.showerror("업데이트 실패", event[1], parent=self)
                 elif event[0] == "finished":
@@ -339,7 +403,8 @@ class HappyBeanApp(tk.Tk):
     def _finish(self, results: dict) -> None:
         self.run_button.configure(state="normal", text="자동 수집 다시 시작")
         self.reset_button.configure(state="normal")
-        self.cancel_button.configure(state="disabled", text="■  중지")
+        self.cafe_button.configure(state="normal")
+        self.cancel_button.configure(state="disabled", text="중지")
         self.live_dot.configure(fg=MUTED)
         self.live_text.configure(text="완료", fg=MUTED)
         bean_items = [
@@ -395,4 +460,5 @@ class HappyBeanApp(tk.Tk):
 
 
 def launch_ui() -> None:
+    enable_dpi_awareness()
     HappyBeanApp().mainloop()

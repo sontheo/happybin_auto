@@ -478,7 +478,11 @@ def scan_all_bean_banners(page: Page, actually_click: bool = False) -> list[dict
     print("\n[콩배너] ========== 전체 콩배너 스캔 시작 ==========")
     results = []
 
-    for page_name, url in BEAN_BANNER_PAGES.items():
+    pages = dict(BEAN_BANNER_PAGES)
+    pages.pop("카페_메인", None)
+    if config.CAFE_WRITE_URL:
+        pages["카페_메인"] = config.CAFE_URL
+    for page_name, url in pages.items():
         result = scan_page_for_bean_banner(page, url, page_name, actually_click)
         results.append(result)
 

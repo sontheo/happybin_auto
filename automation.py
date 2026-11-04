@@ -9,6 +9,7 @@ from threading import Event
 from modules.login import check_and_relogin, create_browser_context, do_login
 from modules.user_manager import get_or_create_config
 from modules.blog import do_blog_write
+import config
 from modules.cafe import do_cafe_write
 from modules.happybean import collect_all_beans
 from modules.bean_banner import scan_all_bean_banners
@@ -42,6 +43,7 @@ def run_automation(username: str | None = None, on_progress: ProgressCallback | 
     context = None
     results: dict[str, bool] = {}
     try:
+        config.apply_cafe_for_user(username)
         ensure_not_cancelled()
         _notify(on_progress, "login", "[1/5] 브라우저 실행 및 로그인 상태 확인...")
         pw, context = create_browser_context(username)
