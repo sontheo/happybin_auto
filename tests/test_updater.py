@@ -118,7 +118,7 @@ class UpdateTests(unittest.TestCase):
                 deadline = time.monotonic() + 15
                 while True:
                     try:
-                        (app / 'HappybinAuto.exe').rename(app / 'finished.exe')
+                        (app / 'HappybinAuto.exe').unlink()
                         break
                     except PermissionError:
                         if time.monotonic() >= deadline:
