@@ -26,6 +26,8 @@
 
 Windows 배포본은 실행할 때 백그라운드에서 새 정식 릴리스를 확인하고 화면 상단 버튼에 확인 결과를 표시합니다. 새 버전이 있으면 버튼을 눌러 내려받고, 다운로드가 끝나면 설치와 재시작 여부를 선택할 수 있습니다. 수집 중에는 설치를 기다립니다. ZIP의 SHA-256을 검증하며 인터넷을 사용할 수 없어도 기존 버전을 사용할 수 있습니다. 실행 파일과 `_internal` 폴더를 수정할 수 있는 위치에 압축을 풀어야 합니다. 기존 4.1.0 이하 버전에는 이 기능이 없으므로 처음에는 새 배포본을 직접 설치해야 합니다.
 
+업데이트 설치가 실행되지 않으면 앱을 종료하고 최신 ZIP을 새 폴더에 압축 해제한 뒤 새 `HappybinAuto.exe`를 실행하세요. 기존 폴더는 새 버전이 정상적으로 실행되는지 확인할 때까지 보관하세요. 사용자 프로필은 일반적으로 앱 폴더와 별도의 `%LOCALAPPDATA%\HappyBeanAuto\`에 있습니다. 이전 앱 폴더에만 `user_data`가 있다면 삭제하지 말고 [로컬 데이터 안내](#로그인-정보와-로컬-데이터)를 확인하세요.
+
 릴리스 태그는 `4.2.0` 또는 `v4.2.0`처럼 세 자리 숫자를 사용하세요. GitHub에서 정식 릴리스를 게시하면 Windows 빌드가 자동으로 ZIP을 첨부합니다. 빌드가 완료되기 전에는 업데이트가 제공되지 않습니다.
 
 ## 실행 전에 확인하세요
@@ -56,15 +58,15 @@ $env:HAPPYBIN_CAFE_URL = "https://cafe.naver.com/your-cafe"
 
 ## 명령줄 옵션
 
-압축을 푼 `HappybinAuto` 폴더에서 PowerShell을 열고 실행합니다. `--user`는 NAVER ID가 아니라 로컬 프로필 이름입니다.
+명령줄 출력이 필요한 경우 소스 저장소에서 의존성을 설치한 뒤 PowerShell로 실행합니다. Windows 배포용 GUI 실행 파일은 콘솔 출력을 표시하지 않습니다. `--user`는 NAVER ID가 아니라 로컬 프로필 이름입니다.
 
 ```powershell
-.\HappybinAuto.exe --help
-.\HappybinAuto.exe --cli
-.\HappybinAuto.exe --status
-.\HappybinAuto.exe --list-users
-.\HappybinAuto.exe --reset-login --user my-profile
-.\HappybinAuto.exe --check-browser
+python main.py --help
+python main.py --cli
+python main.py --status
+python main.py --list-users
+python main.py --reset-login --user my-profile
+python main.py --check-browser
 ```
 
 `--cli`도 실제 자동화와 게시를 수행할 수 있습니다. `--status`는 로컬 `session.json` 백업의 존재와 경과 정보를 표시하며 실시간 로그인 상태를 확인하지 않습니다. `--reset-login`은 선택한 프로필의 세션 백업과 브라우저 데이터를 삭제합니다. `--check-browser`는 번들 Chromium의 실행을 확인합니다.

@@ -26,6 +26,8 @@ You need **Windows x64 and an interactive desktop**. The release ZIP includes th
 
 The Windows distribution checks for a newer stable release in the background and displays the result in the button at the top. Select an available update to download it, then choose whether to install and restart. Installation waits until collection has stopped. The ZIP is checked against its SHA-256 digest, and the existing version remains usable while offline. Extract the application to a writable location. Versions 4.1.0 and earlier do not have this feature and must first be updated manually.
 
+If installation does not start, close the app, extract the latest ZIP to a new folder, and run the new `HappybinAuto.exe`. Keep the old folder until you have confirmed the new version starts. User profiles are normally stored separately under `%LOCALAPPDATA%\HappyBeanAuto\`. If `user_data` exists only in the old application folder, keep it and review [Login and local data](#login-and-local-data).
+
 Publish a stable release with a three-part tag such as `4.2.0` or `v4.2.0`; GitHub Actions builds and attaches the ZIP. The update becomes available after the build finishes.
 
 ## Before running
@@ -56,15 +58,15 @@ Both values are required for cafe posting and the cafe home-page banner scan. Th
 
 ## Command-line options
 
-Open PowerShell in the extracted `HappybinAuto` folder. `--user` selects a local profile, not a NAVER ID.
+For command-line output, install the dependencies and run from the source repository in PowerShell. The Windows GUI distribution does not display console output. `--user` selects a local profile, not a NAVER ID.
 
 ```powershell
-.\HappybinAuto.exe --help
-.\HappybinAuto.exe --cli
-.\HappybinAuto.exe --status
-.\HappybinAuto.exe --list-users
-.\HappybinAuto.exe --reset-login --user my-profile
-.\HappybinAuto.exe --check-browser
+python main.py --help
+python main.py --cli
+python main.py --status
+python main.py --list-users
+python main.py --reset-login --user my-profile
+python main.py --check-browser
 ```
 
 `--cli` can perform real automation and posting. `--status` reports the existence and age of the local `session.json` backup; it does not check live login status. `--reset-login` deletes the selected profile's session backup and browser data. `--check-browser` checks that the bundled Chromium starts.
