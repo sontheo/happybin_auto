@@ -103,10 +103,11 @@ class UpdateTests(unittest.TestCase):
                                       creationflags=subprocess.CREATE_NO_WINDOW)
             try:
                 with patch.object(updater.sys, 'executable', str(app / 'HappybinAuto.exe')), patch.object(updater.os, 'getpid', return_value=parent.pid):
-                    updater.launch_installer(stage)
+                    installer = updater.launch_installer(stage)
                 self.assertEqual((app / 'HappybinAuto.exe').read_bytes(), b'old executable')
                 parent.terminate()
                 parent.wait(timeout=10)
+                installer.wait(timeout=30)
                 deadline = time.monotonic() + 30
                 while stage.exists() and time.monotonic() < deadline:
                     time.sleep(.1)
@@ -114,6 +115,15 @@ class UpdateTests(unittest.TestCase):
                 self.assertEqual((app / 'HappybinAuto.exe').read_bytes(), replacement.read_bytes())
                 self.assertTrue((app / '_internal' / 'new').is_file())
                 self.assertFalse((app / '_internal' / 'old').exists())
+                deadline = time.monotonic() + 15
+                while True:
+                    try:
+                        (app / 'HappybinAuto.exe').rename(app / 'finished.exe')
+                        break
+                    except PermissionError:
+                        if time.monotonic() >= deadline:
+                            raise
+                        time.sleep(.1)
             finally:
                 if parent.poll() is None:
                     parent.terminate()

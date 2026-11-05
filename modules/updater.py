@@ -127,7 +127,7 @@ try {
 '''
 
 
-def launch_installer(stage: Path) -> None:
+def launch_installer(stage: Path) -> subprocess.Popen:
     app_dir = Path(sys.executable).resolve().parent
     if not (app_dir / "_internal").is_dir():
         raise ValueError("설치 폴더를 찾을 수 없습니다")
@@ -145,3 +145,4 @@ def launch_installer(stage: Path) -> None:
             process.terminate()
             raise RuntimeError("업데이트 설치 프로그램이 응답하지 않습니다")
         time.sleep(0.05)
+    return process
