@@ -10,8 +10,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
+from collections.abc import Callable
 
 from app_version import VERSION
 
@@ -47,7 +49,7 @@ def check_update() -> dict | None:
     raise UpdateUnavailable("새 버전의 Windows 배포 파일이 아직 준비되지 않았습니다.")
 
 
-def stage_update(release: dict) -> Path:
+def stage_update(release: dict, progress: Callable[[str, int, int | None], None] | None = None) -> Path:
     stage = Path(tempfile.mkdtemp(prefix="happybin-update-"))
     try:
         archive = stage / ASSET
@@ -55,12 +57,21 @@ def stage_update(release: dict) -> Path:
         digest = hashlib.sha256()
         size = 0
         with urllib.request.urlopen(request, timeout=30) as response, archive.open("wb") as output:
+            header = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+            total_size = int(header) if header and header.isdigit() and int(header) > 0 else None
+            last_percent = -1
             while chunk := response.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_ARCHIVE:
                     raise ValueError("업데이트 파일이 너무 큽니다")
                 digest.update(chunk)
                 output.write(chunk)
+                percent = size * 100 // total_size if total_size else size // (5 * 1024 * 1024)
+                if progress and percent != last_percent:
+                    progress("download", size, total_size)
+                    last_percent = percent
+        if progress:
+            progress("verify", size, total_size)
         if digest.hexdigest() != release["digest"]:
             raise ValueError("업데이트 파일의 SHA-256 검증에 실패했습니다")
         with zipfile.ZipFile(archive) as zipped:
@@ -72,6 +83,8 @@ def stage_update(release: dict) -> Path:
                     any(part in ("..", ".") or ":" in part or "\\" in part for part in path.parts) or
                     (item.external_attr >> 16) & 0o170000 == 0o120000 or total > MAX_EXTRACTED):
                     raise ValueError("안전하지 않은 업데이트 압축 파일입니다")
+            if progress:
+                progress("extract", 0, None)
             zipped.extractall(stage)
         app = stage / "HappybinAuto"
         if not (app / "HappybinAuto.exe").is_file() or not (app / "_internal").is_dir():
@@ -88,9 +101,10 @@ param([int]$AppPid, [string]$AppDir, [string]$Stage)
 $ErrorActionPreference = 'Stop'
 $backup = Join-Path $Stage 'backup'
 $new = Join-Path $Stage 'HappybinAuto'
-New-Item -ItemType Directory -Path $backup | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $Stage 'installer-ready'), 'ready')
 try {
     Wait-Process -Id $AppPid -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $backup | Out-Null
     foreach ($name in @('HappybinAuto.exe', '_internal')) {
         Move-Item -LiteralPath (Join-Path $AppDir $name) -Destination $backup
     }
@@ -119,5 +133,15 @@ def launch_installer(stage: Path) -> None:
         raise ValueError("설치 폴더를 찾을 수 없습니다")
     script = stage / "install.ps1"
     script.write_text(_SCRIPT, encoding="utf-8-sig")
-    subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "B", "-File", str(script),
-                      str(os.getpid()), str(app_dir), str(stage)], creationflags=subprocess.CREATE_NO_WINDOW)
+    process = subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                                "-AppPid", str(os.getpid()), "-AppDir", str(app_dir), "-Stage", str(stage)],
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+    ready = stage / "installer-ready"
+    deadline = time.monotonic() + 10
+    while not ready.is_file():
+        if process.poll() is not None:
+            raise RuntimeError("업데이트 설치 프로그램을 시작하지 못했습니다")
+        if time.monotonic() >= deadline:
+            process.terminate()
+            raise RuntimeError("업데이트 설치 프로그램이 응답하지 않습니다")
+        time.sleep(0.05)

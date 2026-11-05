@@ -461,7 +461,9 @@ class HappyBeanApp(tk.Tk):
             release = self.update_release
             def download() -> None:
                 try:
-                    stage = updater.stage_update(release)
+                    def report(phase: str, size: int, total: int | None) -> None:
+                        self.events.put(("update_progress", phase, size, total))
+                    stage = updater.stage_update(release, progress=report)
                     if self.closed_event.is_set():
                         shutil.rmtree(stage, ignore_errors=True)
                     else:
@@ -479,8 +481,9 @@ class HappyBeanApp(tk.Tk):
                 updater.launch_installer(self.update_stage)
                 self.update_stage = None
                 self.destroy()
-            except Exception:
+            except Exception as exc:
                 self.update_status.set("설치 실패 · 다시 시도")
+                messagebox.showerror("업데이트 설치 실패", f"설치를 시작하지 못했습니다. 다시 시도하거나 최신 ZIP을 내려받아 주세요.\n\n{exc}", parent=self)
         elif self.update_state not in ("checking", "downloading"):
             self._begin_update_check()
 
@@ -598,6 +601,18 @@ class HappyBeanApp(tk.Tk):
                 elif event[0] == "update_check_error":
                     self.update_state = "error"
                     self.update_status.set("확인 실패 · 다시 시도  ↻")
+                elif event[0] == "update_progress":
+                    _, phase, size, total = event
+                    if phase == "download":
+                        downloaded = size / (1024 * 1024)
+                        if total:
+                            self.update_status.set(f"다운로드 {min(100, size * 100 // total)}% · {downloaded:.0f}/{total / (1024 * 1024):.0f} MB")
+                        else:
+                            self.update_status.set(f"다운로드 {downloaded:.0f} MB")
+                    elif phase == "verify":
+                        self.update_status.set("다운로드 검증 중…")
+                    elif phase == "extract":
+                        self.update_status.set("업데이트 압축 해제 중…")
                 elif event[0] == "update_ready":
                     self.update_stage = event[1]
                     self.update_state = "ready"

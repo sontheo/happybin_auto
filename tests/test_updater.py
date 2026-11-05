@@ -1,8 +1,13 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -56,6 +61,62 @@ class UpdateTests(unittest.TestCase):
                 updater.stage_update(release)
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
+    def test_stage_reports_download_and_extraction(self):
+        payload = archive({'HappybinAuto/HappybinAuto.exe': b'exe', 'HappybinAuto/_internal/a': b'data'})
+        release = {'url': 'https://example.org/file.zip', 'digest': hashlib.sha256(payload).hexdigest()}
+        response = Response(payload)
+        response.headers = {'Content-Length': str(len(payload))}
+        events = []
+        with tempfile.TemporaryDirectory() as tmp, patch('tempfile.tempdir', tmp), patch('urllib.request.urlopen', return_value=response):
+            updater.stage_update(release, progress=lambda *event: events.append(event))
+        self.assertEqual(events[0], ('download', len(payload), len(payload)))
+        self.assertEqual([event[0] for event in events], ['download', 'verify', 'extract'])
 
+    def test_installer_start_failure_is_reported_before_app_closes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / '_internal').mkdir()
+            stage = root / 'stage'
+            stage.mkdir()
+            with patch.object(updater.sys, 'executable', str(root / 'HappybinAuto.exe')), \
+                 patch.object(subprocess, 'CREATE_NO_WINDOW', 0, create=True), \
+                 patch.object(subprocess, 'Popen') as popen:
+                popen.return_value.poll.return_value = 1
+                with self.assertRaisesRegex(RuntimeError, '설치 프로그램을 시작하지 못했습니다'):
+                    updater.launch_installer(stage)
+                self.assertIn('Bypass', popen.call_args.args[0])
+
+    @unittest.skipUnless(sys.platform == 'win32', 'requires Windows PowerShell')
+    def test_installer_replaces_files_after_parent_exits(self):
+        with tempfile.TemporaryDirectory(prefix='업데이트 test ') as tmp:
+            root = Path(tmp)
+            app = root / 'app directory'
+            stage = root / 'stage directory'
+            (app / '_internal').mkdir(parents=True)
+            (stage / 'HappybinAuto' / '_internal').mkdir(parents=True)
+            (app / 'HappybinAuto.exe').write_bytes(b'old executable')
+            (app / '_internal' / 'old').write_text('old')
+            replacement = Path(os.environ['SystemRoot']) / 'System32' / 'where.exe'
+            shutil.copyfile(replacement, stage / 'HappybinAuto' / 'HappybinAuto.exe')
+            (stage / 'HappybinAuto' / '_internal' / 'new').write_text('new')
+            parent = subprocess.Popen(['powershell.exe', '-NoProfile', '-Command', 'Start-Sleep -Seconds 30'],
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
+            try:
+                with patch.object(updater.sys, 'executable', str(app / 'HappybinAuto.exe')), patch.object(updater.os, 'getpid', return_value=parent.pid):
+                    updater.launch_installer(stage)
+                self.assertEqual((app / 'HappybinAuto.exe').read_bytes(), b'old executable')
+                parent.terminate()
+                parent.wait(timeout=10)
+                deadline = time.monotonic() + 30
+                while stage.exists() and time.monotonic() < deadline:
+                    time.sleep(.1)
+                self.assertFalse(stage.exists(), 'installer did not complete')
+                self.assertEqual((app / 'HappybinAuto.exe').read_bytes(), replacement.read_bytes())
+                self.assertTrue((app / '_internal' / 'new').is_file())
+                self.assertFalse((app / '_internal' / 'old').exists())
+            finally:
+                if parent.poll() is None:
+                    parent.terminate()
+                    parent.wait(timeout=10)
 if __name__ == '__main__':
     unittest.main()
