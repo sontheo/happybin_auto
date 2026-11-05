@@ -1,2 +1,2 @@
 """Version embedded in Windows builds; the release workflow replaces this value."""
-VERSION = "4.1.0"
+VERSION = "4.2.1"

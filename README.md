@@ -17,10 +17,10 @@
 
 **Windows x64와 대화형 데스크톱 환경**이 필요합니다. 배포 ZIP에는 프로그램과 Playwright용 Chromium이 포함되어 있으므로 Python이나 Git을 따로 설치할 필요가 없습니다.
 
-1. [최신 릴리스](https://github.com/sontheo/happybin_auto/releases/latest)에서 `HappybinAuto-windows-x64.zip`을 다운로드합니다.
+1. [최신 릴리스](https://github.com/sontheo/happybin_auto/releases/latest)에서 버전이 표시된 `HappybinAuto-<버전>-windows-x64.zip`을 다운로드합니다.
 2. ZIP을 폴더째 압축 해제하고, `HappybinAuto` 폴더의 `HappybinAuto.exe`를 실행합니다. 함께 제공되는 `_internal` 폴더를 실행 파일과 같은 위치에 두세요.
 3. 화면에서 **자동 수집 시작**을 누르고, 브라우저가 열리면 안내에 따라 NAVER에 로그인합니다. 자동화 중에는 브라우저 탭을 직접 조작하지 마세요.
-4. 현재 상황과 활동 기록에서 상세 로그를 확인합니다. 중지 버튼은 진행 중인 작업에 중지 요청을 보냅니다. 기본 UI는 별도 콘솔 창을 숨기며 기존 터미널에서 실행한 명령줄 모드는 유지합니다.
+4. 현재 상황과 활동 기록에서 상세 로그를 확인합니다. 중지 버튼은 진행 중인 작업에 중지 요청을 보냅니다. Windows 앱은 콘솔 창 없이 실행되며, 소스에서 실행할 때는 명령줄 모드도 사용할 수 있습니다.
 
 ## 자동 업데이트
 

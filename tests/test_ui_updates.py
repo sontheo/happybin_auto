@@ -12,6 +12,17 @@ except (ImportError, ModuleNotFoundError):
     tk = ui = None
 
 
+@unittest.skipIf(ui is None, 'Tk is unavailable')
+class WindowedLogTests(unittest.TestCase):
+    def test_log_stream_without_console(self):
+        import queue
+        events = queue.Queue()
+        stream = ui._QueueStream(events, None)
+        stream.write('windowed log')
+        stream.flush()
+        self.assertEqual(events.get_nowait(), ('log', 'windowed log'))
+
+
 @unittest.skipIf(ui is None or os.environ.get('HAPPYBIN_HEADLESS_TESTS') == '1',
                  'Tk or an interactive display is unavailable')
 class UpdateUiTests(unittest.TestCase):

@@ -17,10 +17,10 @@
 
 You need **Windows x64 and an interactive desktop**. The release ZIP includes the application and Playwright's Chromium; a separate Python or Git installation is not required.
 
-1. Download `HappybinAuto-windows-x64.zip` from the [latest release](https://github.com/sontheo/happybin_auto/releases/latest).
+1. Download `HappybinAuto-<version>-windows-x64.zip` from the [latest release](https://github.com/sontheo/happybin_auto/releases/latest).
 2. Extract the ZIP and run `HappybinAuto.exe` inside the `HappybinAuto` folder. Keep the included `_internal` folder beside the executable.
 3. Select **자동 수집 시작** (start collection). When the browser opens, follow its prompts to sign in to NAVER. Do not manually operate its tabs while automation is running.
-4. Review the current status and full activity log. The stop button requests that the current run stop. The default UI hides its own console window; command-line mode remains available in an existing terminal.
+4. Review the current status and full activity log. The stop button requests that the current run stop. The Windows application runs without a console window; command-line mode is available when running from source.
 
 ## Automatic updates
 

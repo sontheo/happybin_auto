@@ -48,21 +48,30 @@ jobs:
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = '0'
-          python -m PyInstaller --noconfirm --clean --onedir --console --manifest windows/app.manifest --add-data "assets/fonts;assets/fonts" --name HappybinAuto main.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --manifest windows/app.manifest --add-data "assets/fonts;assets/fonts" --name HappybinAuto main.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify packaged application and Chromium
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = '0'
-          & .\dist\HappybinAuto\HappybinAuto.exe --help
+          @'
+          import struct
+          from pathlib import Path
+          exe = Path('dist/HappybinAuto/HappybinAuto.exe').read_bytes()
+          pe = struct.unpack_from('<I', exe, 0x3c)[0]
+          assert struct.unpack_from('<H', exe, pe + 24 + 68)[0] == 2, 'Executable must use the Windows GUI subsystem'
+          '@ | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & .\dist\HappybinAuto\HappybinAuto.exe --check-browser
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $check = Start-Process -FilePath .\dist\HappybinAuto\HappybinAuto.exe -ArgumentList '--check-browser' -Wait -PassThru
+          if ($check.ExitCode -ne 0) { exit $check.ExitCode }
       - name: Package distribution
         shell: pwsh
         run: |
           Copy-Item README.md, README.en.md, LICENSE dist\HappybinAuto\
-          Compress-Archive -Path dist\HappybinAuto -DestinationPath HappybinAuto-windows-x64.zip
+          $version = python -c "from app_version import VERSION; print(VERSION)"
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v?\d+\.\d+\.\d+$') { throw 'Invalid application version' }
+          Compress-Archive -Path dist\HappybinAuto -DestinationPath "HappybinAuto-$version-windows-x64.zip"
+          Copy-Item "HappybinAuto-$version-windows-x64.zip" HappybinAuto-windows-x64.zip
       - name: Verify update archive layout
         shell: pwsh
         run: |
@@ -83,6 +92,7 @@ jobs:
           name: HappybinAuto-windows-x64
           path: |
             HappybinAuto-windows-x64.zip
+            HappybinAuto-*-windows-x64.zip
           if-no-files-found: error
           retention-days: 7
       - name: Attach ZIP to release
@@ -92,5 +102,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "$env:RELEASE_TAG" HappybinAuto-windows-x64.zip
+          gh release upload "$env:RELEASE_TAG" HappybinAuto-windows-x64.zip "HappybinAuto-$env:RELEASE_TAG-windows-x64.zip" --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

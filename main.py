@@ -35,23 +35,6 @@ def show_status(username: str) -> None:
     print("상태: " + ("재로그인 필요 가능" if info.get("expired") else "쿠키 저장됨"))
 
 
-def hide_owned_console() -> None:
-    """Hide the EXE's own GUI console; keep an existing terminal visible."""
-    if sys.platform != "win32" or not getattr(sys, "frozen", False):
-        return
-    try:
-        import ctypes
-        processes = (ctypes.c_ulong * 2)()
-        count = ctypes.windll.kernel32.GetConsoleProcessList(processes, len(processes))
-        get_window = ctypes.windll.kernel32.GetConsoleWindow
-        get_window.restype = ctypes.c_void_p
-        hwnd = get_window()
-        if count == 1 and hwnd:
-            ctypes.windll.user32.ShowWindow(ctypes.c_void_p(hwnd), 0)
-    except (AttributeError, OSError):
-        pass
-
-
 def main() -> None:
     args = parse_args()
     username = args.user or getpass.getuser()
@@ -83,7 +66,6 @@ def main() -> None:
         run_automation(username)
         return
 
-    hide_owned_console()
     from ui import launch_ui
     launch_ui()
 
